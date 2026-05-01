@@ -1,0 +1,3 @@
+display_name: Generate Diagram From Code
+short_description: Creates inspected dark-mode SVG workflow diagrams from code or logs.
+default_prompt: Create a dark-mode SVG diagram from this code or workflow, inspect it visually for clarity, save it as a file, and show me the result.
