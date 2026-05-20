@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Plan Review"
+  short_description: "Review plans until ready for Codex."
+  default_prompt: "Use $implementation-plan-review to review this implementation plan for readiness: <plan file>"
