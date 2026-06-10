@@ -1,6 +1,6 @@
 ---
 name: implementation-plan-review
-description: Use when Codex needs to review, repair, or readiness-check an implementation plan before execution, especially when asked if a plan is ready, to use subagents for plan review, or to make a plan ready for Superpowers-driven implementation.
+description: Use when asked to review, repair, or readiness-check an implementation plan before execution, especially when asked if a plan is ready, to use subagents for plan review, or to make a plan ready for Superpowers-driven implementation.
 metadata:
   skill_library:
     tier: owned
@@ -29,9 +29,9 @@ Treat the plan as unproven until it survives source-backed, repo-guidance-backed
 4. Read the target plan file(s).
 5. Build a source-backed map of the real repo before editing the plan: planned files, existing symbols, commands, package exports, schemas, tests, fixtures, runtime paths, and verification commands.
 
-## Codex Subagent Pattern
+## Subagent Pattern
 
-When the user explicitly requests subagents and Codex subagents are available, use read-only `explorer` subagents for independent review lanes. Keep the main Codex thread as the coordinator and only editor.
+When the user explicitly requests subagents and the host agent provides them (Codex `explorer` subagents, Claude Code `Explore` agents, or equivalent read-only subagents), use one subagent per independent review lane. Keep the main thread as the coordinator and only editor.
 
 Use self-contained subagent prompts. Do not rely on inherited context. Give each subagent:
 
@@ -41,6 +41,13 @@ Use self-contained subagent prompts. Do not rely on inherited context. Give each
 - one review lane
 - "read-only review; do not edit files"
 - required output: blocker-only findings with evidence, impact, and recommended plan patch
+
+Example finding:
+
+- Lane: Mechanical Source Verification
+- Evidence: Task 4 imports `validate_session` from `gateway/auth.py`, but `gateway/auth.py` does not exist and no earlier task creates it.
+- Impact: the implementer must invent the auth module's location and contract.
+- Recommended patch: add a task before Task 4 that creates `gateway/auth.py` with `validate_session(token) -> SessionClaims`, and pin that import path in Task 4.
 
 If subagents are not available or not permitted in the current session, run the same lanes yourself and say so in the final response.
 
@@ -55,6 +62,8 @@ For non-trivial plans, cover these lanes:
 - Docs And Handoff: docs indexes, current-state docs, sibling/parent plans, stale terms, placeholders, and downstream handoffs stay synchronized.
 
 ## Readiness Standard
+
+Scale required specificity to the plan's size and blast radius. A large, multi-phase, or security-sensitive plan must satisfy every item below; a small, low-risk plan must satisfy only the items whose absence would force the implementer to guess.
 
 A plan is implementation-ready only if each task identifies:
 
@@ -75,8 +84,9 @@ Block readiness when the plan leaves implementers to infer behavior with phrases
 3. Merge findings and patch all resolvable plan issues in place.
 4. Re-run targeted review for changed areas.
 5. Repeat patch and re-review until mechanical, repo-guidance, security, testing, handoff, and execution-readiness findings are gone.
-6. Run one final blocker-only review whose job is to disprove readiness.
-7. Do not say `ready` until the final blocker-only review is clean.
+6. If two full patch-and-review loops do not converge, stop patching. Report `not ready: needs redesign` with the structural problems; the plan needs re-planning, not more patches.
+7. Run one final blocker-only review whose job is to disprove readiness.
+8. Do not say `ready` until the final blocker-only review is clean.
 
 ## Product Decisions
 
@@ -106,6 +116,7 @@ Lead with a direct verdict:
 - `ready`
 - `not ready: product decisions remain`
 - `not ready: blockers remain`
+- `not ready: needs redesign`
 
 Then report:
 
