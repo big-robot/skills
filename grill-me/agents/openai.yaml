@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grill Me"
+  short_description: "Relentless plan interrogation skill"
+  default_prompt: "Use $grill-me to interrogate this plan until all major decisions are resolved."
