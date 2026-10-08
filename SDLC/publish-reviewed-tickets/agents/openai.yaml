@@ -1,0 +1,6 @@
+interface:
+  display_name: "Publish Reviewed Tickets"
+  short_description: "Publish reviewed GitHub delivery bundles"
+  default_prompt: "Use $publish-reviewed-tickets to publish this reviewed delivery bundle to GitHub: <bundle directory>"
+policy:
+  allow_implicit_invocation: false

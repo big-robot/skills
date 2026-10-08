@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Development Loop"
+  short_description: "Coordinate sole-writer Workers through guarded PR loops"
+  default_prompt: "Use $codex-development-loop as the Controller for this ready GitHub ticket or parent issue. Delegate each pull-request unit to one Worker and stop at terminal merge approval: <issue URL>"

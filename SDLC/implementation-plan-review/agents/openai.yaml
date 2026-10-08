@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Plan Review"
+  short_description: "Review ticket plans and Delivery Bundles"
+  default_prompt: "Use $implementation-plan-review to source-check this temporary standalone ticket plan or Delivery Bundle for readiness: <plan path and target, or bundle directory>"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Resolve Review Findings"
+  short_description: "Create a bounded local correction commit"
+  default_prompt: "Use $resolve-review-findings inside the assigned Worker to verify live findings and return one local correction outcome without external mutation."

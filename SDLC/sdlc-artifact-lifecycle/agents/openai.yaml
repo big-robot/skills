@@ -1,0 +1,4 @@
+interface:
+  display_name: "SDLC Artifact Lifecycle"
+  short_description: "Route tracker authority, durable docs, and machine state"
+  default_prompt: "Use $sdlc-artifact-lifecycle to decide what belongs in tracker issues, durable repository docs, temporary transport, or machine-only state."

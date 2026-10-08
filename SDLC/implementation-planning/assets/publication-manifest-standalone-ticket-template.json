@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "standalone-ticket",
+  "repository": "<owner/repository>",
+  "base": {
+    "ref": "<reviewed ref>",
+    "sha": "<40-character commit SHA>"
+  },
+  "target": {
+    "kind": "existing-issue",
+    "url": "https://github.com/<owner>/<repository>/issues/<number>",
+    "digest": "<current live issue SHA-256 digest>"
+  },
+  "candidate": {
+    "title": "<issue title>",
+    "bodySha256": "<candidate body SHA-256>"
+  },
+  "verification": [
+    {
+      "id": "V-01",
+      "command": "<exact verification command>",
+      "description": "<what the command proves>"
+    }
+  ]
+}

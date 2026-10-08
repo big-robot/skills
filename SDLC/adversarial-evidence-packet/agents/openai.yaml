@@ -1,0 +1,4 @@
+interface:
+  display_name: "Adversarial Evidence Packet"
+  short_description: "Structured evidence packets for review"
+  default_prompt: "Use $adversarial-evidence-packet to review this plan or diff with evidence-backed findings."

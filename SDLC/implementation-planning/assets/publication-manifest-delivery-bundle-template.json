@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "kind": "delivery-bundle",
+  "repository": "<owner/repository>",
+  "base": {
+    "ref": "<reviewed ref>",
+    "sha": "<40-character commit SHA>"
+  },
+  "target": {
+    "kind": "create-new"
+  },
+  "parent": {
+    "title": "<parent title>"
+  },
+  "slices": [
+    {
+      "id": "S01",
+      "title": "<issue title>",
+      "outcome": "<independently testable outcome>",
+      "blockedBy": [],
+      "verification": [
+        {
+          "id": "V-01",
+          "command": "<exact verification command>",
+          "description": "<what the command proves>"
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "title": "<issue title>",
+      "outcome": "<independently testable outcome>",
+      "blockedBy": ["S01"],
+      "verification": [
+        {
+          "id": "V-02",
+          "command": "<exact verification command>",
+          "description": "<what the command proves>"
+        }
+      ]
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "AC-01",
+      "owner": "S01",
+      "verification": ["V-01"]
+    }
+  ]
+}

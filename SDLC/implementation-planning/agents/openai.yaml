@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Planning"
+  short_description: "Plan a standalone ticket or Delivery Bundle"
+  default_prompt: "Use $implementation-planning to choose single-ticket or Delivery Bundle mode and produce a source-backed implementation contract: <request>"
