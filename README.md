@@ -2,6 +2,8 @@
 
 Big Robot helps software companies scale product development through stronger processes and modern AI tooling. The firm combines product management consulting with hands-on engineering to improve customer discovery, prioritization, specifications, and learning from releases while helping teams adopt AI agents in everyday development. Through process design and coaching, Big Robot helps leaders, product managers, and engineers give those agents clear context, define human decision points, and evaluate results against customer needs and business goals.
 
+**If you think you should copy these skill verbatim, you should not be using them at all.**
+
 ## Skills
 
 | Skill | What it helps with |
