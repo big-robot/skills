@@ -82,6 +82,6 @@ Hashes bind recorded content to state. They do not prove commands ran, expected 
 
 Runtime tests exercise rejection and valid exceptions through preflight, the Worker finalizer, and the Controller verifier. Synthetic decision scenarios test bounded decisions separately. Proposed actions are not counted as executed actions, and passing a subset is reported as partial. Neither test set proves live delivery behavior.
 
-Source changes and public exports do not activate skills. Keep active workflows fixed, review the private and public PRs separately, and coordinate adoption after affected runs finish. Product repositories need the root review contract before using the stricter CDL preflight. This change does not modify WSC or install anything.
+Source changes and exports do not activate skills. Keep active workflows fixed, review changes before adoption, and coordinate upgrades after affected runs finish. Product repositories need the root review contract before using the stricter CDL preflight. This change does not modify product repositories or install anything.
 
 Deferred safeguards include a CI test-diff check with a human label, CODEOWNERS for tests and CI, a read-only-test sandbox profile, ADR 0008's Controller-owned QA agents, the ADR 0005 review-brief decision, richer one-off review requests, independent test-authorship pilots, reusable handoff contracts, and selective mutation/property-testing tooling.
