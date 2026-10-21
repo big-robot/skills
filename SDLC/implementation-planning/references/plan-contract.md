@@ -55,7 +55,7 @@ For external APIs, source data, persistence shapes, payment/accounting states, w
 
 ## Verification contract
 
-Apply [test-quality.md](../../shared/test-quality.md). For each test name the protected behavior, highest practical public interface or stable seam, baseline evidence appropriate to the change type, fixture strategy, and reason for existing.
+Apply [test-quality.md](../../shared/test-quality.md), including its oracle and verification-integrity rules. For each test name the protected behavior and expected-result source, highest practical public interface or stable seam, plausible wrong result rejected, baseline evidence appropriate to the change type, fixture strategy, and marginal protection beyond existing checks. Plan a contract reason and retained/replacement proof for each changed verification file, including deletions, snapshots, fixtures, discovery, exclusions, runner configuration, and CI. An unresolved intended-behavior/test conflict is TEST CONFLICT; settle it through existing authority before changing its proof.
 
 Trace every acceptance criterion and unit to an exact check:
 

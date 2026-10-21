@@ -10,6 +10,8 @@ import { isValidManualReviewBasis, validateLedger } from "./validate-ledger.mjs"
 import { SHA_RE, validateWorkerReceiptShape } from "./worker-receipt.mjs";
 import { isReviewRequestBody, reviewRequestBody } from "./review-request.mjs";
 import { automaticReviewEvidence, readReviewSnapshot } from "./watch-pr.mjs";
+import { verificationBase, reconcileVerificationChanges, validateReceiptReferences } from "./verification-integrity.mjs";
+import { assertReviewPolicy } from "./review-policy.mjs";
 
 const OPERATIONS = new Set(["verify-worker-return", "adopt-review", "request-review", "reconcile-review-request", "classify-review", "merge-child", "prepare-parent-approval", "merge-parent"]);
 const EXIT = { ready: 0, waiting: 10, human: 20, conflict: 30, tool: 40 };
@@ -104,10 +106,20 @@ function verifyWorkerReceipt(options, ledger) {
   if (branch !== ledger.branch) fail("live branch does not match ledger branch");
   if (head !== receipt.localCommitSha || (options.expectedHead && head !== options.expectedHead)) fail("worker receipt does not match live HEAD");
   if (run("git", ["status", "--porcelain"], options.repo)) fail("worktree is not clean");
+  let baseSha;
+  try {
+    assertReviewPolicy(options.repo);
+    validateReceiptReferences(receipt, options.repo);
+    baseSha = verificationBase(options.repo, ledger.baseRef, head);
+    reconcileVerificationChanges(receipt, options.repo, baseSha);
+  } catch (error) {
+    fail(error.message);
+  }
   if (receipt.reviewTier !== "trivial") {
+    if (ledger.localAudit.engine !== "codex") fail("nontrivial Worker returns require Codex local audit provenance; inline review cannot satisfy standard or large-complex review");
     run(process.execPath, [path.join(scriptDir, "assert-local-audit-covered.mjs"), "--file", options.ledger, "--head-sha", head], options.repo);
   }
-  return baseReceipt(options, ledger, { headSha: head, classification: "ready", permittedNextTransition: "push-candidate", workerReceiptSha256: suppliedHash });
+  return baseReceipt(options, ledger, { baseSha, headSha: head, classification: "ready", permittedNextTransition: "push-candidate", workerReceiptSha256: suppliedHash });
 }
 
 function githubRepo(ledger) {

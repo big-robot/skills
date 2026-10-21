@@ -44,15 +44,18 @@ Carry material already-observed concerns outside the approved task in optional `
 
 The field is permitted on implementation and correction receipts and on `no-change`/`stopped` messages; those other outcomes retain their existing format and handling. It grants no scope or external mutation authority. The Controller also captures its own observations and follows [terminal-handoffs.md](terminal-handoffs.md#incidental-finding-retention) for disposition and retention at ordinary return/transition boundaries.
 
+Before creating either phase's receipt, read [verification-receipt.md](verification-receipt.md) for typed evidence, reference limits, full-diff dispositions, base binding, minimum tier, and version-1 recovery. Each packet carries `expectedBaseOrReviewedHead` as `<ref> <full lowercase SHA>` for the Controller-approved PR base, including correction packets. A reviewed candidate head alone is not the PR base.
+
 ## Hash-bound receipt
 
 Every `ready-to-push` return is one JSON object no larger than 64 KiB with:
 
-- `schemaVersion: 1`
+- `schemaVersion: 2`
 - `outcome: "ready-to-push"`
 - `phase: "implementation"` or `"correction"`
 - `reviewTier: "trivial"`, `"standard"`, or `"large-complex"`
 - full `localCommitSha`
+- full `verificationBaseSha` and complete `verificationChanges` dispositions from the full PR diff
 - `receiptSha256`
 
 Write the return object without `receiptSha256` to a private OS-temporary draft file. Finalize it under the packet-bound runtime:

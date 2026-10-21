@@ -10,13 +10,13 @@ Each task must identify:
 - exact types, schemas, constants, query shapes, exports, commands, and runtime inputs
 - source evidence covering relevant analogous call sites, states, handlers, persistence paths, and early returns
 - evidence for every external API/source-data field, missing-field assumption, state value, query shape, and lookup path
-- exact tests, fixtures, expected outputs, commands, and rationale satisfying [test-quality.md](../../shared/test-quality.md)
+- exact tests, fixtures, expected outputs with authoritative oracle sources, plausible wrong results rejected, commands, and marginal-protection rationale satisfying [test-quality.md](../../shared/test-quality.md)
 - baseline evidence appropriate to the change: regression demonstration for changed behavior when practical; preserved-contract checks for refactors; proportionate static/manual checks for mechanical work
 - exact task order, ownership, sibling and downstream handoffs
 - security boundaries for committed files, ignored artifacts, stdout, logs, credentials, and external services
 - the selected mode's exact identity, lifecycle, ownership, and publication preconditions
 
-Trace binding composition proof under the entrypoint's required boundary. A declared limitation cannot close a gap, and equivalent source-backed mechanics are allowed.
+Trace binding composition proof under the entrypoint's required boundary. A declared limitation cannot close a gap, and equivalent source-backed mechanics are allowed. Inspect planned verification changes against the shared integrity rules: require each contractual reason and retained/replacement proof, including removed tests, fixture/snapshot changes, discovery/exclusions, runner configuration, and CI. Reject copied or mock-echo expectations without independent justification and production test-value special cases without a domain contract. Return unresolved intended-behavior/test conflicts as TEST CONFLICT through the existing decision-needed route; accept approved contract updates that preserve required proof. A setup/import/syntax failure does not establish behavioral RED.
 
 Scan every reviewed Markdown file for vague execution language, including `similar to`, `high-signal`, `if needed`, `appropriate error handling`, `write tests for the above`, `left to the implementer`, `TBD`, and `TODO`. Patch each hit or establish why it does not leave behavior to the implementer.
 

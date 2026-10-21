@@ -6,6 +6,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { validateWorkerReceiptShape } from "./worker-receipt.mjs";
+import { parseApprovedBase, verificationBase, reconcileVerificationChanges, validateReceiptReferences } from "./verification-integrity.mjs";
+import { assertReviewPolicy } from "./review-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +86,10 @@ try {
   if (head !== receipt.localCommitSha) throw new Error("worker receipt does not match live HEAD");
   if (branch !== packet.branch) throw new Error("live branch does not match worker packet branch");
   if (run("git", ["status", "--porcelain"], options.repo)) throw new Error("worktree is not clean");
+  assertReviewPolicy(options.repo);
+  validateReceiptReferences(receipt, options.repo);
+  const baseSha = verificationBase(options.repo, parseApprovedBase(packet.expectedBaseOrReviewedHead), head);
+  reconcileVerificationChanges(receipt, options.repo, baseSha);
 
   const finalized = { ...receipt, receiptSha256: hash };
   const serialized = `${JSON.stringify(finalized, null, 2)}\n`;

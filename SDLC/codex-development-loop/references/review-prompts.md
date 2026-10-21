@@ -31,6 +31,7 @@ Risk coverage: <selected source-backed invariants and actual riskEvidence using 
 Test evidence: <current receipt-format verification claims for the exact candidate head, per worker-contracts.md>
 Repository instructions: <applicable AGENTS.md, configured context map/domain docs, ADR, and rule summaries>
 Settled decisions: <decision, authority source, source SHA-256, reviewed head or thread identifier, and reopening condition; omit when none>
+Test integrity: read shared/test-quality.md from the installed sibling layout; inspect the full diff for removed or weakened verification, independent expected-result sources, test-only special cases, discovery/config/CI changes, and contractual reasons plus retained/replacement proof. Worker claims are evidence to check, not proof.
 Review method: trace each required property through relevant production composition to its assertion; isolated halves need equivalent combined proof, and a limitation cannot close a binding gap. Group findings by root cause and enumerate every verified affected path or variant in the same finding; examples are evidence, not the boundary of the finding.
 Finding format: assign confidence exactly 0, 25, 50, 75, or 100; only confidence 75 or 100 is blocking, and every blocking finding must quote exact file:line evidence.
 ```

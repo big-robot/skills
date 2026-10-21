@@ -25,6 +25,8 @@
 
 ## Tests And Verification
 
+<!-- For each test: behavior, authoritative oracle, seam, plausible wrong result rejected, marginal protection, change-type baseline, fixture, and exact command. For verification changes: contract reason and retained/replacement proof. Resolve TEST CONFLICT through existing authority. -->
+
 <behavior tests, static checks, and exact commands>
 
 ## Security And Privacy

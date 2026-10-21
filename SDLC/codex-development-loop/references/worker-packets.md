@@ -18,7 +18,7 @@ Then pass exactly this packet:
   "prUrl": null,
   "checkout": "<absolute checkout path>",
   "branch": "<bound branch name>",
-  "expectedBaseOrReviewedHead": "<exact base ref and SHA>",
+  "expectedBaseOrReviewedHead": "<approved PR base ref> <full lowercase base SHA>",
   "phase": "implementation",
   "workerContractPath": "<absolute canonical path to this skill’s references/worker-contracts.md>",
   "runtime": {
@@ -47,6 +47,7 @@ Pass exactly this packet:
 {
   "prUrl": "<PR URL>",
   "expectedReviewedHead": "<full reviewed head SHA>",
+  "expectedBaseOrReviewedHead": "<approved PR base ref> <full lowercase base SHA>",
   "checkout": "<absolute checkout path>",
   "branch": "<exact branch name>",
   "phase": "correction",
@@ -85,17 +86,24 @@ Return this required shape for an implementation candidate; optional `incidental
 ```json
 {
   "outcome": "ready-to-push",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "receiptSha256": "<64 lowercase hex characters>",
   "phase": "implementation",
   "reviewTier": "<trivial | standard | large-complex>",
   "localCommitSha": "<full commit SHA>",
+  "verificationBaseSha": "<independently derived full PR merge-base SHA>",
+  "verificationChanges": [],
   "acceptanceEvidence": [
-    "<criterion -> required/exercised behavior and boundary -> exact command + terminal result + bounded supporting reference -> substitution/equivalence or gap>"
+    {
+      "claim": "<criterion and protected behavior>",
+      "command": "<exact command actually run>",
+      "result": { "status": "passed", "exitCode": 0 },
+      "requiredBoundary": "<required proof boundary>",
+      "exercisedBoundary": "<actual exercised boundary>",
+      "references": [{ "path": "sdlc-scratch/evidence/check.txt" }]
+    }
   ],
-  "riskEvidence": [
-    "<selected source-backed invariant -> required/exercised behavior and boundary -> exact command + terminal result + bounded supporting reference -> substitution/equivalence or gap>"
-  ],
+  "riskEvidence": [],
   "surfaceClosure": [
     {
       "id": "<changed enumerable contract>",
@@ -106,10 +114,12 @@ Return this required shape for an implementation candidate; optional `incidental
       "introducedBehaviorProof": ["<test covering behavior introduced by this implementation>"]
     }
   ],
-  "tests": ["<exact command + terminal result + required/exercised boundary + bounded supporting reference>"],
-  "localReview": ["<gate + exact command + audited head + terminal result + required/exercised boundary + bounded audit reference>"]
+  "tests": [{ "claim": "<protected behavior>", "command": "<exact command>", "result": { "status": "passed", "exitCode": 0 }, "requiredBoundary": "<required boundary>", "exercisedBoundary": "<actual boundary>", "references": [{ "path": "sdlc-scratch/evidence/check.txt" }] }],
+  "localReview": [{ "claim": "<gate and audited head>", "command": "<audit command>", "result": { "status": "passed", "exitCode": 0 }, "requiredBoundary": "<review scope>", "exercisedBoundary": "<reviewed scope>", "references": [{ "path": "sdlc-scratch/audits/review.jsonl" }] }]
 }
 ```
+
+Read [verification-receipt.md](verification-receipt.md) for the complete schema and verification-change entries. The empty `verificationChanges` example is valid only when no detected or additional declared verification file changed; record every applicable disposition otherwise. Keep `riskEvidence` empty only when no selected risk requires proof.
 
 Use the evidence transport contract in [worker-contracts.md](worker-contracts.md) for every claim; this example does not redefine it.
 
