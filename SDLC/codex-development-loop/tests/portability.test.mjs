@@ -25,7 +25,7 @@ test("relocated dispatch accepts only its own canonical regular Worker contract"
     issueUrl: "https://github.example.test/acme/repo/issues/1",
     checkout: f.root,
     branch: "feature",
-    expectedBaseOrReviewedHead: `main ${"a".repeat(40)}`,
+    expectedBaseOrReviewedHead: "a".repeat(40),
     phase: "implementation",
     localCommitAuthority: true,
     externalMutationProhibited: true,

@@ -10,8 +10,6 @@ import { isValidManualReviewBasis, validateLedger } from "./validate-ledger.mjs"
 import { SHA_RE, validateWorkerReceiptShape } from "./worker-receipt.mjs";
 import { isReviewRequestBody, reviewRequestBody } from "./review-request.mjs";
 import { automaticReviewEvidence, readReviewSnapshot } from "./watch-pr.mjs";
-import { verificationBase, reconcileVerificationChanges, validateReceiptReferences, assertReceiptByteCapacity } from "./verification-integrity.mjs";
-import { assertReviewPolicy } from "./review-policy.mjs";
 
 const OPERATIONS = new Set(["verify-worker-return", "adopt-review", "request-review", "reconcile-review-request", "classify-review", "merge-child", "prepare-parent-approval", "merge-parent"]);
 const EXIT = { ready: 0, waiting: 10, human: 20, conflict: 30, tool: 40 };
@@ -91,8 +89,7 @@ function verifyWorkerReceipt(options, ledger) {
   if (ledger.continuationMode !== "controller-turn") fail("Worker return verification requires controller-turn ownership");
   if (!options.workerReceipt || !path.isAbsolute(options.workerReceipt)) fail("--worker-receipt must be absolute");
   const stat = fs.lstatSync(options.workerReceipt);
-  if (!stat.isFile() || stat.isSymbolicLink()) fail("worker receipt must be a regular non-symlink file");
-  try { assertReceiptByteCapacity(stat.size); } catch (error) { fail(error.message); }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024) fail("worker receipt must be a regular file no larger than 64 KiB");
   const receipt = JSON.parse(fs.readFileSync(options.workerReceipt, "utf8"));
   let suppliedHash;
   try {
@@ -108,22 +105,9 @@ function verifyWorkerReceipt(options, ledger) {
   if (head !== receipt.localCommitSha || (options.expectedHead && head !== options.expectedHead)) fail("worker receipt does not match live HEAD");
   if (run("git", ["status", "--porcelain"], options.repo)) fail("worktree is not clean");
   if (receipt.reviewTier !== "trivial") {
-    if (ledger.localAudit.engine === "claude") fail("legacy Claude audit provenance remains historical; finish or stop the old run before adopting schema 2, then start an authorized fresh run with a current packet and guarded Codex initial review; preserve the legacy audit unchanged");
-    if (ledger.localAudit.engine !== "codex") fail("nontrivial Worker returns require Codex local audit provenance; inline review cannot satisfy standard or large-complex review");
-  }
-  let baseSha;
-  try {
-    assertReviewPolicy(options.repo);
-    validateReceiptReferences(receipt, options.repo, { runtime: ledger.runtime, localAudit: ledger.localAudit });
-    baseSha = verificationBase(options.repo, ledger.baseRef, head);
-    reconcileVerificationChanges(receipt, options.repo, baseSha);
-  } catch (error) {
-    fail(error.message);
-  }
-  if (receipt.reviewTier !== "trivial") {
     run(process.execPath, [path.join(scriptDir, "assert-local-audit-covered.mjs"), "--file", options.ledger, "--head-sha", head], options.repo);
   }
-  return baseReceipt(options, ledger, { baseSha, headSha: head, classification: "ready", permittedNextTransition: "push-candidate", workerReceiptSha256: suppliedHash });
+  return baseReceipt(options, ledger, { headSha: head, classification: "ready", permittedNextTransition: "push-candidate", workerReceiptSha256: suppliedHash });
 }
 
 function githubRepo(ledger) {

@@ -24,8 +24,6 @@ The Controller answers an actionable request with the missing fact, evidence, or
 
 Unexpected requests remain deliverable through native agent messaging. Do not restrict delivery based on a predispatch prediction of which messages will matter.
 
-`VERIFICATION CAPACITY` uses this same nonterminal action-request route. Preserve the complete sanitized inventory and evidence and ask the Controller to replan within the existing approved unit and publication authority. Do not omit or truncate census entries, autonomously split scope, return `stopped`, or use `TEST CONFLICT` for a transport limit. `large-complex` changes review depth, not the 256 verification-change/65,536 UTF-8 byte bounds. The Controller needs no blanket renewed human approval for an authorized replan; an indivisible unit that cannot fit requires a reviewed transport redesign before implementation. See [capacity recovery](verification-receipt.md#capacity-recovery).
-
 While the Worker is active, the Controller uses `wait_agent` with a watchdog timeout bounded by the host maximum blocking wait and required communication cadence. A Worker message, terminal status, or new user input wakes the Controller immediately; handle actionable input before waiting again. On watchdog timeout, check native status once and wait again when the Worker remains active. A wait-tool error is not evidence that the Worker stopped: inspect native state and reconcile the wait before continuing; do not replace the Worker, duplicate work, or invent a user gate from the error alone.
 
 For an outer execution wrapper around an event or subprocess wait, explicitly set its yield to cover the inner wait within host limits; for example, use a 60-second outer yield around a 60-second inner wait when permitted. A transport yield is not a watchdog timeout: resume it directly without status inspection or commentary. At a genuine watchdog timeout, provide only the shortest update required by the host's communication cadence. Preserve input interruption, timeout/error handling, and fresh mutation-boundary checks; do not introduce fixed long sleeps or change watcher cadence.
@@ -35,6 +33,8 @@ Keep Worker↔Controller communication limited to actionable dependencies and te
 ## Evidence transport for CDL handoffs
 
 Read [shared/test-quality.md](../../shared/test-quality.md) for test design and execution. For CDL Worker handoffs, the existing finalized and verified receipt specializes that reference's inline-command/output presentation rule: use the receipt as the reporting format, without duplicating raw output in a final answer. This exception changes evidence transport only, not required checks, current evidence, or semantic proof.
+
+Apply the [shared test-integrity guidance](../../shared/test-quality.md). In existing `acceptanceEvidence`, `tests` or correction `checks` strings, list each modified, deleted or renamed existing test, its authoritative contract reason, and retained or replacement proof. Include changed snapshots, fixtures, discovery, exclusions, runner configuration and CI in that review. Keep the existing receipt fields and schema; these notes do not add fields or runtime validation.
 
 Each verification claim in implementation `acceptanceEvidence`, `riskEvidence`, `tests`, and `localReview`, or correction evidence and `checks`, records the exact command actually run, terminal result, required versus exercised boundary, and a bounded resolvable supporting reference to current command output or audit evidence. Newly claimed check execution must occur in the current Worker turn; retain its verbatim terminal output in the supporting reference. Include source-backed substitutions/equivalence and explicit remaining gaps; record `not run: <reason>` for checks not run. Never claim intended coverage as exercised coverage. References resolve in the authorized workspace or canonical contract and exclude secrets and raw private payloads. Hashes and valid shape never substitute for semantic coverage. The Controller independently compares proof with the canonical acceptance and verification contract. Use the documented JSON fields, including the optional transport below, and retain the 64 KiB finalized-receipt limit.
 
@@ -46,20 +46,15 @@ Carry material already-observed concerns outside the approved task in optional `
 
 The field is permitted on implementation and correction receipts and on `no-change`/`stopped` messages; those other outcomes retain their existing format and handling. It grants no scope or external mutation authority. The Controller also captures its own observations and follows [terminal-handoffs.md](terminal-handoffs.md#incidental-finding-retention) for disposition and retention at ordinary return/transition boundaries.
 
-Before creating either phase's receipt, read [verification-receipt.md](verification-receipt.md) for typed evidence, reference limits, full-diff dispositions, base binding, minimum tier, and version-1 recovery. Each packet carries `expectedBaseOrReviewedHead` as `<ref> <full lowercase SHA>` for the Controller-approved PR base, including correction packets. A reviewed candidate head alone is not the PR base.
-
-For nontrivial implementation, passed `localReview` evidence must reference its guarded audit, using `kind: "guarded-audit"` for small audits and preferably all sizes. Supporting references stay ordinary by omitting kind. Guarded references are verified at every size and bound to Controller audit provenance. Correction keeps ancestor-audit reuse without a new required localReview or general review; explicitly marked correction audit references receive the same checks.
-
 ## Hash-bound receipt
 
 Every `ready-to-push` return is one JSON object no larger than 64 KiB with:
 
-- `schemaVersion: 2`
+- `schemaVersion: 1`
 - `outcome: "ready-to-push"`
 - `phase: "implementation"` or `"correction"`
 - `reviewTier: "trivial"`, `"standard"`, or `"large-complex"`
 - full `localCommitSha`
-- full `verificationBaseSha` and complete `verificationChanges` dispositions from the full PR diff
 - `receiptSha256`
 
 Write the return object without `receiptSha256` to a private OS-temporary draft file. Finalize it under the packet-bound runtime:
@@ -88,7 +83,7 @@ Do not reconstruct evidence from raw logs or repair an invalid Worker return in 
 
 Use the complete return object required by `resolve-review-findings`, then add the hash-bound receipt fields required above:
 
-- `schemaVersion: 2`
+- `schemaVersion: 1`
 - `receiptSha256`
 - `phase: "correction"`
 - `reviewTier`

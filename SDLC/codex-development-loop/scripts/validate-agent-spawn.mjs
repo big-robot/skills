@@ -4,7 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseApprovedBase } from "./verification-integrity.mjs";
 
 const WORKER_KEYS = new Set([
   "issueUrl", "prUrl", "checkout", "branch", "expectedBaseOrReviewedHead",
@@ -56,7 +55,6 @@ try {
     }
     if (!path.isAbsolute(value.checkout)) throw new Error("worker checkout must be absolute");
     if (!new Set(["implementation", "correction"]).has(value.phase)) throw new Error("worker phase is invalid");
-    parseApprovedBase(value.expectedBaseOrReviewedHead);
     if (value.localCommitAuthority !== true || value.externalMutationProhibited !== true) {
       throw new Error("worker authority flags must be true");
     }
@@ -104,7 +102,6 @@ try {
     if (value.phase === "correction" && (!value.prUrl || !value.expectedReviewedHead)) {
       throw new Error("correction packet requires prUrl and expectedReviewedHead");
     }
-    if (value.phase === "correction" && !/^[0-9a-f]{40}$/.test(value.expectedReviewedHead)) throw new Error("correction expectedReviewedHead must be a full lowercase SHA");
   } else {
     if (typeof value.task !== "string" || !value.task.trim()) throw new Error("explorer packet requires a bounded task");
     if (!path.isAbsolute(value.checkout)) throw new Error("explorer checkout must be absolute");

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { validateEvidenceEntry, validateVerificationShape, validateSurfaceClosure } from "./verification-integrity.mjs";
 
 export const SHA_RE = /^[0-9a-f]{40}$/;
 
@@ -19,8 +18,7 @@ export function receiptHash(receipt) {
 
 export function validateWorkerReceiptShape(receipt, { expectedPhase = null, requireHash = true } = {}) {
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) throw new Error("worker receipt must be a JSON object");
-  if (receipt.schemaVersion !== 2) throw new Error("worker receipt requires schemaVersion 2; obtain a fresh typed-evidence receipt from the Worker (legacy receipts cannot be upgraded by the Controller)");
-  if (receipt.outcome !== "ready-to-push") throw new Error("worker receipt outcome is invalid");
+  if (receipt.schemaVersion !== 1 || receipt.outcome !== "ready-to-push") throw new Error("worker receipt schema or outcome is invalid");
   if (!new Set(["implementation", "correction"]).has(receipt.phase)) throw new Error("worker receipt phase is invalid");
   if (expectedPhase !== null && receipt.phase !== expectedPhase) throw new Error("worker receipt phase does not match expected phase");
   if (!new Set(["trivial", "standard", "large-complex"]).has(receipt.reviewTier)) throw new Error("worker receipt reviewTier is invalid");
@@ -29,20 +27,11 @@ export function validateWorkerReceiptShape(receipt, { expectedPhase = null, requ
   const requiredArrays = receipt.phase === "implementation"
     ? ["acceptanceEvidence", "riskEvidence", "surfaceClosure", "tests", "localReview"]
     : ["checks", "prSurfaceCensus", "findingClosure", "surfaceClosure"];
-  const evidenceArrays = ["acceptanceEvidence", "riskEvidence", "tests", "localReview", "checks"];
-  for (const key of requiredArrays) {
-    if (!Array.isArray(receipt[key]) || receipt[key].length > 256) throw new Error(`worker receipt ${key} must be a bounded array`);
-  }
-  for (const key of evidenceArrays.filter((key) => Object.hasOwn(receipt, key))) {
-    if (!Array.isArray(receipt[key]) || receipt[key].length > 256) throw new Error(`worker receipt ${key} must be a bounded array`);
-    receipt[key].forEach((entry, index) => validateEvidenceEntry(entry, `worker receipt ${key}[${index}]`));
-  }
+  for (const key of requiredArrays) if (!Array.isArray(receipt[key])) throw new Error(`worker receipt ${key} must be an array`);
   const requiredNonempty = receipt.phase === "implementation"
     ? ["acceptanceEvidence", "tests", "localReview"]
     : ["checks", "prSurfaceCensus", "surfaceClosure"];
   for (const key of requiredNonempty) if (receipt[key].length === 0) throw new Error(`worker receipt ${key} is incomplete`);
-  validateSurfaceClosure(receipt);
-  validateVerificationShape(receipt);
 
   if (Object.hasOwn(receipt, "incidentalFindings")) {
     if (!Array.isArray(receipt.incidentalFindings)) throw new Error("worker receipt incidentalFindings must be an array");

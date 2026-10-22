@@ -3,9 +3,6 @@ import { createHash } from "node:crypto";
 import { validateReceiptTokenUsage } from "./token-usage.mjs";
 
 export const REVIEW_RECEIPT_TYPE = "cdl.review_receipt";
-export const MAX_REVIEW_STREAM_BYTES = 64 * 1024 * 1024;
-// Both captured streams plus bounded serialized receipt metadata.
-export const MAX_REVIEW_AUDIT_BYTES = 2 * MAX_REVIEW_STREAM_BYTES + 64 * 1024;
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
@@ -76,9 +73,7 @@ export function createReviewAuditReceipt({
 
 export function serializeReviewAudit(transcript, receipt) {
   const normalized = transcript.endsWith("\n") ? transcript : `${transcript}\n`;
-  const serialized = `${normalized}${JSON.stringify(receipt)}\n`;
-  if (Buffer.byteLength(serialized) > MAX_REVIEW_AUDIT_BYTES) throw new Error("guarded review audit exceeds the bounded capture and receipt limit");
-  return serialized;
+  return `${normalized}${JSON.stringify(receipt)}\n`;
 }
 
 export function verifyReviewAudit(contents, expected = {}) {

@@ -28,13 +28,12 @@ Do not accept copied findings, review-history mirrors, or private Controller sta
 - The Worker may inspect, edit product code, run focused checks, and create one local correction commit for a completed batch.
 - The Worker owns every command it launches through terminal completion. If a check returns a running session or cell ID, keep the same Worker turn open and poll that exact session with the corresponding wait or stdin-poll tool until it exits. A live process, long runtime, or lack of new output is not unavailable evidence and never permits `stopped`; do not delegate polling to the Controller or start a duplicate process.
 - Do not launch a general local Codex review during correction. The completed initial local review is PR-unit provenance; correction closure is proved by contract-surface closure, deterministic checks, and the Controller's next exact-head GitHub review.
-- Exception: if an initially trivial unit has only inline audit provenance and the Controller promotes it to standard, the same Worker may obtain its first guarded Codex review under the [promotion procedure](../codex-development-loop/references/review-cycle.md#promotion-during-correction). Preserve the original inline evidence. This does not permit another general review after valid Codex coverage exists.
 - The Worker must not push, request review, mutate a PR or review thread, merge, mutate an issue, control a watcher, deploy, publish, or perform production, destructive, or credential actions.
 - Use only named `explorer` agents for optional read-only investigation. Keep one product-code writer.
 
 ## Test integrity
 
-Apply [test-quality.md](../shared/test-quality.md) before correcting tests or their production behavior. Establish authoritative expected results, plausible wrong results rejected, and marginal proof. Inspect the complete verification diff, including removed tests, assertions, snapshots, fixtures, skips, discovery/exclusions, runner configuration, and CI; retain each contractual reason and retained/replacement proof. Approved contract updates may change tests and source together. Flag production special-casing of test values without a domain contract. Report unresolved contract disagreement as TEST CONFLICT through the existing stopped/product-judgment route before changing affected expectations or exclusions. Require behavioral RED only for changed behavior when practical; setup/import/syntax failure is not RED, and preserved behavior uses before-and-after passing evidence.
+Read [test-quality.md](../shared/test-quality.md) before correcting tests or their production behavior. Check authoritative expected results, plausible wrong results rejected, and additional protection. Inspect removed or renamed tests, assertions, snapshots, fixtures, skips, discovery/exclusions, runner configuration and CI. Record each contractual reason and retained or replacement proof in existing `checks` strings. Approved contract changes may update source and tests together. Flag test-value special cases without a domain contract. For unresolved contract disagreement, report `TEST CONFLICT: <file>:<line> <reason>` and stop the affected change through the existing decision route before changing expectations or exclusions. Setup/import/syntax failure is not behavioral RED; preserved behavior uses before-and-after passing evidence.
 
 ## Workflow
 
@@ -53,13 +52,13 @@ Apply [test-quality.md](../shared/test-quality.md) before correcting tests or th
 
 Return exactly one object:
 
-When called by CDL, add only its documented outer Worker receipt metadata and optional incidental transport from [worker-contracts.md](../codex-development-loop/references/worker-contracts.md). This skill owns the correction census and closure evidence schema below. Use schema version 2 and the shared typed verification evidence and verification-change contract documented there; the same validator is used by finalizer and Controller. `checks` uses its typed evidence shape (claim, exact command, terminal result, required/exercised boundaries, and local references), not legacy strings. Add `verificationBaseSha` and `verificationChanges` according to that contract; derive the complete changed-verification census from the exact Git base/candidate, including deletions and configuration, and account for each file with a contract reason and retained/replacement proof. Do not duplicate or relax the CDL nested schema. Rebuild a fresh receipt for the current state when a legacy receipt fails validation. Structural validity remains separate from semantic proof.
+When called by CDL, add only its documented outer Worker receipt metadata and optional incidental transport from [worker-contracts.md](../codex-development-loop/references/worker-contracts.md). This skill owns the correction evidence schema below.
 
 ```json
 {
   "outcome": "ready-to-push",
   "localCommitSha": "<full correction commit SHA>",
-  "checks": [{"claim": "<protected behavior>", "command": "<exact focused command>", "result": {"status": "passed", "exitCode": 0}, "requiredBoundary": "<contract boundary>", "exercisedBoundary": "<observed boundary>", "references": [{"path": "<checkout-relative evidence file>"}]}],
+  "checks": ["<focused command and result>"],
   "prSurfaceCensus": [
     {
       "surfaceId": "<owning contract surface ID>",

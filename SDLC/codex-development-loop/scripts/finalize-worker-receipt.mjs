@@ -6,8 +6,6 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { validateWorkerReceiptShape } from "./worker-receipt.mjs";
-import { parseApprovedBase, verificationBase, reconcileVerificationChanges, validateReceiptReferences, assertReceiptByteCapacity } from "./verification-integrity.mjs";
-import { assertReviewPolicy } from "./review-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,11 +28,10 @@ function parseArgs(argv) {
   };
 }
 
-function regularFile(file, label, maxSize = null) {
+function regularFile(file, label, maxSize) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink file`);
-  if (maxSize !== null && stat.size > maxSize) throw new Error(`${label} is too large`);
-  return stat;
+  if (stat.size > maxSize) throw new Error(`${label} is too large`);
 }
 
 function run(command, args, cwd) {
@@ -74,7 +71,7 @@ try {
 
   const packet = JSON.parse(fs.readFileSync(options.packet, "utf8"));
   options.receipt = path.resolve(packet.receiptPath);
-  assertReceiptByteCapacity(regularFile(options.receipt, "draft worker receipt").size);
+  regularFile(options.receipt, "draft worker receipt", 64 * 1024);
   if (fs.realpathSync(options.repo) !== fs.realpathSync(packet.checkout)) throw new Error("repository does not match worker packet checkout");
   if (packet.runtime.nodeBin !== null && fs.realpathSync(process.execPath) !== fs.realpathSync(packet.runtime.nodeBin)) {
     throw new Error("receipt finalizer is not running under the packet-bound Node runtime");
@@ -87,14 +84,10 @@ try {
   if (head !== receipt.localCommitSha) throw new Error("worker receipt does not match live HEAD");
   if (branch !== packet.branch) throw new Error("live branch does not match worker packet branch");
   if (run("git", ["status", "--porcelain"], options.repo)) throw new Error("worktree is not clean");
-  assertReviewPolicy(options.repo);
-  validateReceiptReferences(receipt, options.repo, { runtime: packet.runtime });
-  const baseSha = verificationBase(options.repo, parseApprovedBase(packet.expectedBaseOrReviewedHead), head);
-  reconcileVerificationChanges(receipt, options.repo, baseSha);
 
   const finalized = { ...receipt, receiptSha256: hash };
   const serialized = `${JSON.stringify(finalized, null, 2)}\n`;
-  assertReceiptByteCapacity(Buffer.byteLength(serialized, "utf8"));
+  if (Buffer.byteLength(serialized, "utf8") > 64 * 1024) throw new Error("finalized worker receipt is too large");
   atomicWrite(options.receipt, serialized, 0o600);
   validateWorkerReceiptShape(JSON.parse(fs.readFileSync(options.receipt, "utf8")), { expectedPhase: packet.phase });
   process.stdout.write(`${JSON.stringify(finalized)}\n`);

@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { inspectReviewPolicy } from "./review-policy.mjs";
 
 function parseArgs(argv) {
   const args = {};
@@ -244,10 +243,8 @@ try {
     [ahead, behind] = counts;
   }
 
-  const reviewPolicy = inspectReviewPolicy(root);
-  // Stop before network-backed launch inspection when the repository contract is absent.
-  const launch = args["issue-url"] && reviewPolicy.ok ? launchReceipt(root, args, base) : null;
-  const ok = reviewPolicy.ok && runtime.ok !== false && (launch === null || (launch.baseMatchesExpected && launch.remoteBaseMatchesExpected));
+  const launch = args["issue-url"] ? launchReceipt(root, args, base) : null;
+  const ok = runtime.ok !== false && (launch === null || (launch.baseMatchesExpected && launch.remoteBaseMatchesExpected));
   process.stdout.write(`${JSON.stringify({
     ok,
     repo: root,
@@ -264,7 +261,6 @@ try {
     ahead,
     behind,
     runtime,
-    reviewPolicy,
     ...(launch === null ? {} : { launch }),
   }, null, 2)}\n`);
   if (!ok) process.exitCode = 1;

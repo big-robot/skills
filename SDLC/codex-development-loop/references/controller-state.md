@@ -82,8 +82,6 @@ The binding command requires foreground `controller-turn` ownership before conta
 
 `localAudit` stores only authoritative completed initial-review provenance. Preserve `clean` or `findings` and the original audited `headSha` across descendant correction commits. Set `status: stale` only when the audit head is no longer an ancestor or its provenance is invalid. New guarded audits use `engine: "codex"`. Retain `engine: "claude"` only as immutable legacy provenance.
 
-Legacy readability preserves history; it does not satisfy fresh schema-2 nontrivial Worker-return acceptance. There is no authenticated legacy-Claude transcript route in that verifier. Keep the old audit unchanged, finish or stop the old run before coordinated adoption, then begin an authorized fresh run with a current Worker packet and guarded Codex initial review. Never relabel legacy provenance, silently upgrade an active run, or launch a replacement general review inside that old run. Existing valid Codex audits retain descendant correction coverage.
-
 ## Verification and request recovery
 
 Before adopting or requesting GitHub review, derive `expectedChecks` from current repository guidance, check configuration, and applicable user instructions. Use `{ "mode": "required", "names": ["<exact required check name>"], "source": "<supporting evidence reference>" }`, or `{ "mode": "none", "source": "<evidence that no CI checks are required>" }`. Record the evidence already available; no separate no-CI approval is required. Missing workflow files or an empty check list alone do not establish that no external checks are required. If the contract remains unknown or conflicting, resolve that specific gap without inventing a CI requirement or treating unknown evidence as success.

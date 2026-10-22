@@ -25,7 +25,7 @@ These skills connect source-backed planning, independent review, approved GitHub
 | [adversarial-evidence-packet](./SDLC/adversarial-evidence-packet/) | Supply evidence packets, confidence anchors, provenance checks, and final disproof for reviews that require them.                                                                                                                                     |
 | [resolve-review-findings](./SDLC/resolve-review-findings/)         | Let the assigned delivery Worker verify findings and complete a bounded local correction commit, then return control before external lifecycle actions.                                                                                               |
 
-[shared/](./SDLC/shared/) contains the stakes-tier and test-quality contracts used across these skills. It is supporting material, not a separately invocable skill. Read [how the system protects verification](./SDLC/shared/test-integrity-system.md) for roles, receipts, review boundaries, and enforcement limits. Before CDL launch, copy the complete [Code Review Rules template](./SDLC/shared/templates/agents-code-review-rules.md) into the target repository’s root AGENTS.md.
+[shared/](./SDLC/shared/) contains the stakes-tier and test-quality contracts used across these skills. It is supporting material, not a separately invocable skill. Read [the test-integrity guide](./SDLC/shared/test-integrity-system.md) for roles, instruction delivery, test expectations, review, and current limits. Before CDL launch, copy the [Code Review Rules template](./SDLC/shared/templates/agents-code-review-rules.md) into the target repository’s root AGENTS.md.
 
 ### Workflow
 

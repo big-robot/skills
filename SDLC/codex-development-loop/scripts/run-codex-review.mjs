@@ -9,11 +9,10 @@ import {
   createReviewAuditReceipt,
   serializeReviewAudit,
   sha256,
-  MAX_REVIEW_STREAM_BYTES,
 } from "./review-audit-receipt.mjs";
 import { compactTokenUsage, reviewUsageEvidence } from "./token-usage.mjs";
 
-const MAX_BUFFER = MAX_REVIEW_STREAM_BYTES;
+const MAX_BUFFER = 64 * 1024 * 1024;
 const REVIEW_COMMAND = ["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"];
 
 function parseArgs(argv) {

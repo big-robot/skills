@@ -22,8 +22,6 @@ Deploy the coherent schema-v6 script set together. Older binaries reject valid p
 
 ## Legacy migration
 
-Ledger migration preserves historical state; it does not upgrade review provenance or authorize mid-run skill adoption. An immutable legacy Claude audit remains readable, but cannot satisfy a fresh schema-2 nontrivial receipt. Preserve its metadata and evidence. Finish or stop the affected old run before coordinated adoption, then start an authorized fresh run with the current packet and guarded Codex initial review. Do not replace the old audit inside its run or weaken the Codex-only acceptance gate.
-
 Never replace or truncate a v1-v5 ledger. Run the preservation-first migrator:
 
 ```bash
