@@ -30,7 +30,8 @@ function relativePath(value, label) {
 
 function reference(ref, label) {
   object(ref, label);
-  keys(ref, ["path", "startLine", "endLine"], label);
+  keys(ref, ["path", "startLine", "endLine", "kind"], label);
+  if (ref.kind !== undefined && ref.kind !== "guarded-audit") throw new Error(`${label}.kind must be guarded-audit or omitted`);
   relativePath(ref.path, `${label}.path`);
   if (ref.startLine !== undefined && (!Number.isSafeInteger(ref.startLine) || ref.startLine < 1)) throw new Error(`${label}.startLine is invalid`);
   if (ref.endLine !== undefined && (ref.startLine === undefined || !Number.isSafeInteger(ref.endLine) || ref.endLine < ref.startLine)) throw new Error(`${label}.endLine is invalid`);
@@ -142,12 +143,15 @@ export function validateReceiptReferences(receipt, repo, { runtime = null, local
   const checkout = fs.realpathSync(repo);
   const validated = new Map();
   const all = [];
-  for (const key of EVIDENCE_KEYS) for (const entry of receipt[key] ?? []) all.push(...entry.references);
-  for (const change of receipt.verificationChanges) {
-    all.push(...change.contractRefs);
-    for (const entry of change.proof) all.push(...entry.references);
+  for (const key of EVIDENCE_KEYS) for (const entry of receipt[key] ?? []) {
+    all.push(...entry.references.map((ref) => ({ ref, role: key, passed: entry.result.status === "passed" })));
   }
-  for (const ref of all) {
+  for (const change of receipt.verificationChanges) {
+    all.push(...change.contractRefs.map((ref) => ({ ref, role: "contract", passed: false })));
+    for (const entry of change.proof) all.push(...entry.references.map((ref) => ({ ref, role: "proof", passed: entry.result.status === "passed" })));
+  }
+  let guardedLocalReview = false;
+  for (const { ref, role, passed } of all) {
     const file = path.resolve(checkout, ref.path);
     const resolved = fs.realpathSync(file);
     const relative = path.relative(checkout, resolved);
@@ -157,40 +161,45 @@ export function validateReceiptReferences(receipt, repo, { runtime = null, local
     const identity = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
     let metadata = validated.get(resolved);
     if (metadata && metadata.identity !== identity) throw new Error(`evidence reference changed during validation: ${ref.path}`);
-    if (stat.size > MAX_REFERENCE_BYTES) {
+    const guarded = ref.kind === "guarded-audit" || stat.size > MAX_REFERENCE_BYTES;
+    if (guarded) {
       const auditRoot = path.join(checkout, "sdlc-scratch", "audits");
       if (stat.size > MAX_REVIEW_AUDIT_BYTES || path.dirname(file) !== auditRoot || resolved !== file
         || fs.realpathSync(auditRoot) !== auditRoot || !fs.lstatSync(auditRoot).isDirectory()) {
-        throw new Error(`evidence reference exceeds 1 MiB and is not a bounded guarded audit: ${ref.path}`);
+        throw new Error(`guarded audit reference must be bounded and directly under the real audit directory: ${ref.path}`);
       }
     }
     if (!metadata) {
-      let lineCount = null;
-      if (stat.size > MAX_REFERENCE_BYTES) {
-        if (typeof runtime?.codexBin !== "string" || typeof runtime?.codexVersion !== "string" || !runtime.codexVersion.trim()) {
-          throw new Error("large guarded audit reference requires the pinned Codex runtime");
-        }
-        if (localAudit !== null && (localAudit.engine !== "codex" || path.resolve(checkout, localAudit.outputFile ?? "") !== file)) {
-          throw new Error("large guarded audit reference does not match Controller audit provenance");
-        }
-        const contents = fs.readFileSync(file, "utf8");
-        const { receipt: audit } = verifyReviewAudit(contents, { codexBin: runtime.codexBin, codexVersion: runtime.codexVersion,
-          ...(localAudit === null ? {} : { headSha: localAudit.headSha, promptSha256: localAudit.promptSha256, exitCode: localAudit.exitCode }) });
-        if (JSON.stringify(audit.command) !== JSON.stringify(["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"])) {
-          throw new Error("large guarded audit reference lacks the guarded review command");
-        }
-        git(repo, ["merge-base", "--is-ancestor", audit.headSha, receipt.localCommitSha]);
-        if (git(repo, ["rev-parse", `${audit.headSha}^{tree}`]).trim() !== audit.treeSha) throw new Error("large guarded audit reference tree does not match its audited commit");
-        lineCount = referenceLineCount(contents);
-      }
-      // Retain only identity and line count; large transcript strings die here.
-      metadata = { identity, lineCount };
+      metadata = { identity, lineCount: null, guardedVerified: false };
       validated.set(resolved, metadata);
     }
+    if (guarded && !metadata.guardedVerified) {
+      if (typeof runtime?.codexBin !== "string" || typeof runtime?.codexVersion !== "string" || !runtime.codexVersion.trim()) {
+        throw new Error("guarded audit reference requires the pinned Codex runtime");
+      }
+      if (localAudit !== null && (localAudit.engine !== "codex" || path.resolve(checkout, localAudit.outputFile ?? "") !== file)) {
+        throw new Error("guarded audit reference does not match Controller audit provenance");
+      }
+      const contents = fs.readFileSync(file, "utf8");
+      const { receipt: audit } = verifyReviewAudit(contents, { codexBin: runtime.codexBin, codexVersion: runtime.codexVersion,
+        ...(localAudit === null ? {} : { headSha: localAudit.headSha, promptSha256: localAudit.promptSha256, exitCode: localAudit.exitCode }) });
+      if (JSON.stringify(audit.command) !== JSON.stringify(["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"])) {
+        throw new Error("guarded audit reference lacks the guarded review command");
+      }
+      git(repo, ["merge-base", "--is-ancestor", audit.headSha, receipt.localCommitSha]);
+      if (git(repo, ["rev-parse", `${audit.headSha}^{tree}`]).trim() !== audit.treeSha) throw new Error("guarded audit reference tree does not match its audited commit");
+      metadata.lineCount = referenceLineCount(contents);
+      metadata.guardedVerified = true;
+    }
+    // Only metadata survives this iteration; stronger roles promote ordinary cache entries.
+    if (role === "localReview" && passed && guarded && metadata.guardedVerified) guardedLocalReview = true;
     if (ref.startLine !== undefined) {
       metadata.lineCount ??= referenceLineCount(fs.readFileSync(file, "utf8"));
       if ((ref.endLine ?? ref.startLine) > metadata.lineCount) throw new Error(`evidence reference line range is unresolved: ${ref.path}`);
     }
+  }
+  if (receipt.phase === "implementation" && receipt.reviewTier !== "trivial" && !guardedLocalReview) {
+    throw new Error("nontrivial implementation requires passed localReview evidence referencing a guarded audit; mark small audit references kind: guarded-audit");
   }
 }
 
@@ -219,7 +228,7 @@ export function verificationBase(repo, baseRefOrSha, headSha) {
 export function isVerificationPath(file) {
   return /(^|\/)(?:tests?|specs?|__tests__|fixtures?|__fixtures__|snapshots?|__snapshots__)(\/|[._-])/i.test(file)
     || /(?:^|[./_-])(?:test|spec|fixture|snapshot)(?:[._-]|$)/i.test(path.basename(file))
-    || /(^|\/)(?:\.github\/workflows|\.circleci|\.buildkite|\.husky)(\/|$)/i.test(file)
+    || /(^|\/)(?:\.github\/(?:workflows|actions)|\.circleci|\.buildkite|\.husky)(\/|$)/i.test(file)
     || /(^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Makefile|justfile|Taskfile\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile|azure-pipelines\.ya?ml|conftest\.py|tox\.ini|pytest\.ini|pyproject\.toml|setup\.cfg|Cargo\.toml|go\.mod|Gemfile|Rakefile|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(file)
     || /(^|\/)(?:vitest|vite|jest|playwright|cypress|karma|nyc|c8|coverage|ava|mocha|tap|webdriver|wdio|jasmine|testcafe|wallaby|rollup|webpack|babel|eslint|tsconfig)(?:\.|$)/i.test(path.basename(file))
     || /(^|\/)\.(?:mocharc|nycrc|taprc|c8rc|coveragerc|simplecov)(?:\.|$)/i.test(file)

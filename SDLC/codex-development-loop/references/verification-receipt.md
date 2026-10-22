@@ -21,7 +21,15 @@ Every entry in implementation `acceptanceEvidence`, `riskEvidence`, `tests`, and
 
 Each evidence entry has 1 to 16 references. Paths are checkout-relative, at most 1,024 UTF-8 bytes, without traversal. References must resolve within the checkout to nonempty regular non-symlink files no larger than 1 MiB. Optional positive line numbers must resolve and be ordered. References cannot use shell expressions, URLs, or absolute paths. Validators do not execute content. Retain sanitized output or authorized contract excerpts under ignored checkout-local evidence paths.
 
-Guarded Codex audit references have one bounded exception: a regular file directly under the real `sdlc-scratch/audits/` directory may exceed 1 MiB up to 128 MiB plus 64 KiB. This shared serialization limit covers two captured streams of at most 64 MiB each plus receipt metadata. Both boundaries verify the completed wrapper transcript and hash, pinned Codex binary/version, guarded command, audited commit tree, and ancestry to the candidate. The Controller also matches the reference path, audited head, brief hash, and exit result to its authoritative `localAudit`. Arbitrary large logs, relocated copies, invalid audits, and references beyond this bound are rejected. Ordinary references retain the 1 MiB limit.
+Audit references add `"kind": "guarded-audit"`; omit `kind` for ordinary supporting references. No other kind is supported. Marked audits get full guarded verification regardless of size. A nontrivial implementation must have at least one passed `localReview` entry with such verified evidence; a failed/not-run review entry or an audit cited only under tests does not satisfy that requirement. Ordinary supporting files can accompany the audit, including briefs under the audit directory.
+
+```json
+{"references": [{"path": "sdlc-scratch/audits/review.output", "kind": "guarded-audit"}, {"path": "sdlc-scratch/audits/brief.md"}]}
+```
+
+Guarded Codex audit references have one bounded exception: a regular file directly under the real `sdlc-scratch/audits/` directory may exceed 1 MiB up to 128 MiB plus 64 KiB. This shared serialization limit covers two captured streams of at most 64 MiB each plus receipt metadata. Both boundaries verify the completed wrapper transcript and hash, pinned Codex binary/version, guarded command, audited commit tree, and ancestry to the candidate. The Controller also matches every guarded reference's path, audited head, brief hash, and exit result to its authoritative `localAudit`. Existing unmarked references exceeding 1 MiB still infer guarded verification and can satisfy passed localReview evidence; mark all audit sizes explicitly for clarity. Small audit references require the marker. Arbitrary large logs, relocated copies, invalid audits, and references beyond this bound are rejected. Ordinary references retain the 1 MiB limit.
+
+Correction returns still reuse the original valid ancestor audit; `localReview` is not newly required and this adds no general review. Any correction check explicitly citing `kind: guarded-audit` receives the same size-independent validation. Per-call caches retain only file identity, line count and guarded-verification state, promote a previously ordinary reference when a later role requires stronger proof, and check every requested line range. Nothing is cached across calls.
 
 A syntactically valid failed/not-run result is honest transport, not permission to ignore a required check. Controller semantic acceptance still checks outstanding gaps, exercised boundaries, oracle authority, and actual terminal output. Never report an assertion or self-authored excerpt as independent authority.
 
@@ -55,7 +63,7 @@ The full Git diff uses no rename detection. Renames therefore require deletion a
 
 The conventional detector covers test/spec directories and filenames, fixtures/snapshots, common runner/config files, package manifests and locks, CI directories, hooks, and build/test command files. It is conservative and can include files whose verification effect is small. Record that reason and proportionate proof. It cannot discover every custom naming convention or determine semantic weakening.
 
-Conventional hooks include root and nested `conftest.py`. Coverage configuration includes `.coveragerc`, `.simplecov` variants, `coverage.*`, `c8.*`, the existing nyc/c8 rc files, and Codecov/Coveralls YAML files. These can change collection, fixtures, or exclusions even when no assertion-bearing test file changes.
+Conventional hooks include root and nested `conftest.py`. Coverage configuration includes `.coveragerc`, `.simplecov` variants, `coverage.*`, `c8.*`, the existing nyc/c8 rc files, and Codecov/Coveralls YAML files. CI coverage includes the entire `.github/actions/` subtree as well as workflows: action definitions and supporting JavaScript, shell scripts, and other checked-in action files. These can change collection, fixtures, exclusions or commands even when no assertion-bearing test file changes.
 
 ## Existing structured closure fields
 

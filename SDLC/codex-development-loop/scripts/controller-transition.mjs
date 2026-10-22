@@ -106,6 +106,10 @@ function verifyWorkerReceipt(options, ledger) {
   if (branch !== ledger.branch) fail("live branch does not match ledger branch");
   if (head !== receipt.localCommitSha || (options.expectedHead && head !== options.expectedHead)) fail("worker receipt does not match live HEAD");
   if (run("git", ["status", "--porcelain"], options.repo)) fail("worktree is not clean");
+  if (receipt.reviewTier !== "trivial") {
+    if (ledger.localAudit.engine === "claude") fail("legacy Claude audit provenance remains historical; finish or stop the old run before adopting schema 2, then start an authorized fresh run with a current packet and guarded Codex initial review; preserve the legacy audit unchanged");
+    if (ledger.localAudit.engine !== "codex") fail("nontrivial Worker returns require Codex local audit provenance; inline review cannot satisfy standard or large-complex review");
+  }
   let baseSha;
   try {
     assertReviewPolicy(options.repo);
@@ -116,8 +120,6 @@ function verifyWorkerReceipt(options, ledger) {
     fail(error.message);
   }
   if (receipt.reviewTier !== "trivial") {
-    if (ledger.localAudit.engine === "claude") fail("legacy Claude audit provenance remains historical; finish or stop the old run before adopting schema 2, then start an authorized fresh run with a current packet and guarded Codex initial review; preserve the legacy audit unchanged");
-    if (ledger.localAudit.engine !== "codex") fail("nontrivial Worker returns require Codex local audit provenance; inline review cannot satisfy standard or large-complex review");
     run(process.execPath, [path.join(scriptDir, "assert-local-audit-covered.mjs"), "--file", options.ledger, "--head-sha", head], options.repo);
   }
   return baseReceipt(options, ledger, { baseSha, headSha: head, classification: "ready", permittedNextTransition: "push-candidate", workerReceiptSha256: suppliedHash });

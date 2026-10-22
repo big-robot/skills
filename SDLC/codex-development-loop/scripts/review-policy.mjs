@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 const template = fileURLToPath(new URL("../../shared/templates/agents-code-review-rules.md", import.meta.url));
 const contract = "test-integrity:v1";
 
-const containers = new Set(["pre", "code", "template"]);
+const containers = new Set(["pre", "code", "listing", "template"]);
 
 function htmlTagAt(source, offset) {
-  const start = /^<(\/?)(pre|code|template|script|style|textarea|xmp|iframe|noembed|noframes|plaintext)(?=[\s/>]|$)/i.exec(source.slice(offset));
+  const start = /^<(\/?)(pre|code|listing|template|script|style|textarea|xmp|iframe|noembed|noframes|plaintext)(?=[\s/>]|$)/i.exec(source.slice(offset));
   if (!start) return null;
   let quote = null;
   for (let cursor = offset + start[0].length; cursor < source.length; cursor += 1) {
@@ -57,7 +57,8 @@ function reviewSection(markdown) {
       const boundary = /^ {0,3}(`{3,}|~{3,})/.exec(line);
       if (boundary) {
         if (fence === null) fence = { character: boundary[1][0], length: boundary[1].length };
-        else if (boundary[1][0] === fence.character && boundary[1].length >= fence.length) fence = null;
+        else if (boundary[1][0] === fence.character && boundary[1].length >= fence.length
+          && /^[ \t]*$/.test(line.slice(boundary[0].length).replace(/\r$/, ""))) fence = null;
         continue;
       }
       if (fence !== null || /^(?: {4}| {0,3}\t)/.test(line)) continue;

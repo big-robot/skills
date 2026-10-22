@@ -115,11 +115,13 @@ Return this required shape for an implementation candidate; optional `incidental
     }
   ],
   "tests": [{ "claim": "<protected behavior>", "command": "<exact command>", "result": { "status": "passed", "exitCode": 0 }, "requiredBoundary": "<required boundary>", "exercisedBoundary": "<actual boundary>", "references": [{ "path": "sdlc-scratch/evidence/check.txt" }] }],
-  "localReview": [{ "claim": "<gate and audited head>", "command": "<audit command>", "result": { "status": "passed", "exitCode": 0 }, "requiredBoundary": "<review scope>", "exercisedBoundary": "<reviewed scope>", "references": [{ "path": "sdlc-scratch/audits/review.jsonl" }] }]
+  "localReview": [{ "claim": "<gate and audited head>", "command": "<audit command>", "result": { "status": "passed", "exitCode": 0 }, "requiredBoundary": "<review scope>", "exercisedBoundary": "<reviewed scope>", "references": [{ "path": "sdlc-scratch/audits/review.jsonl", "kind": "guarded-audit" }] }]
 }
 ```
 
 Read [verification-receipt.md](verification-receipt.md) for the complete schema and verification-change entries. The empty `verificationChanges` example is valid only when no detected or additional declared verification file changed; record every applicable disposition otherwise. Keep `riskEvidence` empty only when no selected risk requires proof.
+
+The guarded audit reference is required in passed localReview evidence for standard/large-complex implementation. A legitimate trivial inline audit instead uses ordinary output references with kind omitted. Supporting files may accompany a guarded audit; do not mark a brief or ordinary output as guarded proof.
 
 Use the evidence transport contract in [worker-contracts.md](worker-contracts.md) for every claim; this example does not redefine it.
 

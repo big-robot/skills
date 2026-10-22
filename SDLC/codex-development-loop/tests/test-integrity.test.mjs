@@ -62,7 +62,7 @@ function ledger(repo, head) {
   };
 }
 
-function writeAudit(repo, head, promptSha256, { message = "No findings.", codexBin = "/test/codex", treeSha = git(repo, "rev-parse", `${head}^{tree}`) } = {}) {
+function writeAudit(repo, head, promptSha256, { message = "No findings.", codexBin = fs.realpathSync(process.execPath), treeSha = git(repo, "rev-parse", `${head}^{tree}`) } = {}) {
   const transcript = `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: message } })}\n${JSON.stringify({ type: "turn.completed" })}\n`;
   const receipt = createReviewAuditReceipt({
     baseRef: "main", baseSha: head, headSha: head, treeSha,
@@ -109,14 +109,15 @@ function fixture(t, { phase = "implementation", changes = true, extra = null } =
   const receiptFile = path.join(root, "receipt.json");
   const packetFile = path.join(root, "packet.json");
   const ledgerFile = path.join(repo, "sdlc-scratch/ledgers/pr-42.json");
-  const packet = { issueUrl: "https://github.com/acme/repo/issues/41", prUrl: "https://github.com/acme/repo/pull/42", checkout: repo, branch: "feature", phase, expectedBaseOrReviewedHead: `main ${base}`, ...(phase === "correction" ? { expectedReviewedHead: base } : {}), workerContractPath: CONTRACT, runtime: { nodeBin: process.execPath, codexBin: null, codexVersion: null }, receiptPath: receiptFile, localCommitAuthority: true, externalMutationProhibited: true };
+  const packet = { issueUrl: "https://github.com/acme/repo/issues/41", prUrl: "https://github.com/acme/repo/pull/42", checkout: repo, branch: "feature", phase, expectedBaseOrReviewedHead: `main ${base}`, ...(phase === "correction" ? { expectedReviewedHead: base } : {}), workerContractPath: CONTRACT, runtime: { nodeBin: process.execPath, codexBin: fs.realpathSync(process.execPath), codexVersion: "codex-cli fixture" }, receiptPath: receiptFile, localCommitAuthority: true, externalMutationProhibited: true };
   fs.writeFileSync(packetFile, JSON.stringify(packet));
   const state = ledger(repo, head);
   state.phase = phase;
+  state.runtime = { ...packet.runtime };
   writeAudit(repo, head, state.localAudit.promptSha256);
   write(repo, "sdlc-scratch/ledgers/pr-42.json", JSON.stringify(state));
   const disposition = (file, status = "M") => ({ path: file, status, disposition: status === "A" ? "added" : status === "D" ? "replaced" : "retained", reason: "Approved retention contract update; retained public-export protection", contractRefs: [{ path: "contract.md", startLine: 1 }], proof: [evidence()] });
-  const draft = { schemaVersion: 2, outcome: "ready-to-push", phase, reviewTier: changes || extra ? "standard" : "trivial", localCommitSha: head, verificationBaseSha: base, verificationChanges: changes ? [disposition("tests/domain.test.mjs")] : [], ...(phase === "implementation" ? { acceptanceEvidence: [evidence()], riskEvidence: [], surfaceClosure: [], tests: [evidence()], localReview: [evidence()] } : { checks: [evidence()], prSurfaceCensus: [{ surfaceId: "retention", owningBoundary: "domain.mjs public export", changedProductionSymbols: ["hours"], historicalFindingAnchors: [], effectiveInputs: [] }], findingClosure: [{ finding: "live review anchor", rootCause: "old contractual duration", affectedSurfaceIds: ["retention"] }], surfaceClosure: [surface()] }) };
+  const draft = { schemaVersion: 2, outcome: "ready-to-push", phase, reviewTier: changes || extra ? "standard" : "trivial", localCommitSha: head, verificationBaseSha: base, verificationChanges: changes ? [disposition("tests/domain.test.mjs")] : [], ...(phase === "implementation" ? { acceptanceEvidence: [evidence()], riskEvidence: [], surfaceClosure: [], tests: [evidence()], localReview: [{ ...evidence(), references: [{ path: "sdlc-scratch/audits/review.jsonl", kind: "guarded-audit" }] }] } : { checks: [evidence()], prSurfaceCensus: [{ surfaceId: "retention", owningBoundary: "domain.mjs public export", changedProductionSymbols: ["hours"], historicalFindingAnchors: [], effectiveInputs: [] }], findingClosure: [{ finding: "live review anchor", rootCause: "old contractual duration", affectedSurfaceIds: ["retention"] }], surfaceClosure: [surface()] }) };
   const finalize = (body = draft) => {
     fs.writeFileSync(receiptFile, JSON.stringify(body));
     return run(process.execPath, [path.join(SCRIPTS, "finalize-worker-receipt.mjs"), "--repo", repo, "--packet", packetFile], ROOT);
@@ -340,6 +341,104 @@ test("pytest hooks and coverage exclusion configuration require complete disposi
   assert.equal(f.verify({ ...draft, reviewTier: "trivial" }).status, 30);
 });
 
+test("local GitHub action definitions and supporting code require complete CI dispositions", (t) => {
+  const files = [".github/actions/quality/action.yml", ".github/actions/check/action.yaml", ".github/actions/quality/index.js", ".github/actions/quality/lib/run.mjs", ".github/actions/quality/scripts/check.sh", ".github/actions/quality/Dockerfile"];
+  const f = fixture(t, { changes: false, extra(repo) { for (const file of files) write(repo, file, "# checked-in CI action fixture\n"); } });
+  const draft = { ...f.draft, verificationChanges: files.map((file) => f.disposition(file, "A")) };
+  for (const file of files) {
+    const omitted = { ...draft, verificationChanges: draft.verificationChanges.filter((entry) => entry.path !== file) };
+    assert.match(f.finalize(omitted).stderr, /omits changed file/, file);
+    assert.equal(f.verify(omitted).status, 30, file);
+  }
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
+});
+
+test("small nontrivial implementation review evidence must bind the guarded authoritative audit", (t) => {
+  const f = fixture(t);
+  f.packet.runtime.codexBin = fs.realpathSync(process.execPath);
+  f.packet.runtime.codexVersion = "codex-cli fixture";
+  f.state.runtime = { ...f.packet.runtime };
+  fs.writeFileSync(f.packetFile, JSON.stringify(f.packet));
+  fs.writeFileSync(f.ledgerFile, JSON.stringify(f.state));
+  writeAudit(f.repo, f.head, f.state.localAudit.promptSha256, { codexBin: f.packet.runtime.codexBin });
+  const ordinary = { ...f.draft, localReview: [evidence()] };
+  assert.notEqual(f.finalize(ordinary).status, 0, "an unrelated passing file cannot replace guarded review proof");
+  assert.equal(f.verify(ordinary).status, 30);
+  const ref = { path: "sdlc-scratch/audits/review.jsonl", kind: "guarded-audit" };
+  const guarded = { ...evidence(), references: [ref] };
+  write(f.repo, "sdlc-scratch/audits/brief.md", "ordinary review preparation notes\n");
+  const draft = { ...f.draft, localReview: [guarded, evidence(), { ...evidence(), references: [{ path: "sdlc-scratch/audits/brief.md" }] }] };
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  for (const status of ["failed", "not-run"]) {
+    const entry = { ...guarded, result: status === "failed" ? { status, exitCode: 1 } : { status, exitCode: null, reason: "not performed" } };
+    const wrongStatus = { ...draft, localReview: [entry, evidence()] };
+    assert.notEqual(f.finalize(wrongStatus).status, 0);
+    assert.equal(f.verify(wrongStatus).status, 30);
+  }
+  const wrongRole = { ...draft, tests: [guarded], localReview: [{ ...evidence(), references: [{ path: ref.path }] }] };
+  assert.notEqual(f.finalize(wrongRole).status, 0);
+  assert.equal(f.verify(wrongRole).status, 30);
+  for (const kind of ["ordinary", "", null]) {
+    const invalidKind = { ...draft, localReview: [{ ...guarded, references: [{ ...ref, kind }] }] };
+    assert.match(f.finalize(invalidKind).stderr, /kind must be guarded-audit or omitted/);
+    assert.equal(f.verify(invalidKind).status, 30);
+  }
+  const audit = path.join(f.repo, ref.path);
+  const contents = fs.readFileSync(audit, "utf8");
+  fs.writeFileSync(audit, contents.replace("No findings.", "Bad findings"));
+  const promoted = { ...draft, acceptanceEvidence: [{ ...evidence(), references: [{ path: ref.path, startLine: 1 }] }] };
+  assert.notEqual(f.finalize(promoted).status, 0, "ordinary cache metadata cannot suppress later guarded validation");
+  assert.equal(f.verify(promoted).status, 30);
+  fs.writeFileSync(audit, contents);
+  write(f.repo, "sdlc-scratch/audits/other.output", contents);
+  const unrelated = { ...draft, localReview: [{ ...guarded, references: [{ path: "sdlc-scratch/audits/other.output", kind: "guarded-audit" }] }] };
+  assert.equal(f.finalize(unrelated).status, 0, "finalizer verifies arbitrary-named guarded output using packet provenance");
+  const rejected = f.verify(unrelated);
+  assert.equal(rejected.status, 30);
+  assert.match(rejected.stderr, /Controller audit provenance/);
+  write(f.repo, "sdlc-scratch/relocated.output", contents);
+  const relocated = { ...draft, localReview: [{ ...guarded, references: [{ path: "sdlc-scratch/relocated.output", kind: "guarded-audit" }] }] };
+  assert.notEqual(f.finalize(relocated).status, 0);
+  assert.equal(f.verify(relocated).status, 30);
+
+  writeAudit(f.repo, f.head, f.state.localAudit.promptSha256, { codexBin: f.packet.runtime.codexBin, message: "review detail ".repeat(90000) });
+  const inferredLarge = { ...draft, localReview: [{ ...guarded, references: [{ path: ref.path }] }] };
+  assert.equal(f.finalize(inferredLarge).status, 0, "existing unmarked large audit proof retains compatibility");
+  assert.equal(f.verify().status, 0);
+});
+
+test("correction guarded checks verify small ancestor audits without requiring localReview", (t) => {
+  const f = fixture(t, { phase: "correction" });
+  f.state.localAudit.headSha = f.base;
+  fs.writeFileSync(f.ledgerFile, JSON.stringify(f.state));
+  writeAudit(f.repo, f.base, f.state.localAudit.promptSha256);
+  const ref = { path: "sdlc-scratch/audits/review.jsonl", kind: "guarded-audit" };
+  const draft = { ...f.draft, checks: [{ ...evidence(), references: [ref] }] };
+  assert.equal(Object.hasOwn(draft, "localReview"), false);
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  const file = path.join(f.repo, ref.path);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("No findings.", "Bad findings"));
+  assert.match(f.finalize(draft).stderr, /transcript hash is invalid/);
+  assert.equal(f.verify(draft).status, 30);
+});
+
+test("trivial inline review still accepts ordinary references with no Codex runtime", (t) => {
+  const f = fixture(t, { changes: false });
+  f.packet.runtime.codexBin = null;
+  f.packet.runtime.codexVersion = null;
+  f.state.runtime = { ...f.packet.runtime };
+  f.state.localAudit.engine = "inline";
+  fs.writeFileSync(f.packetFile, JSON.stringify(f.packet));
+  fs.writeFileSync(f.ledgerFile, JSON.stringify(f.state));
+  const draft = { ...f.draft, localReview: [evidence()] };
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+});
+
 test("deletions, renames, runner configuration, snapshots and CI changes require dispositions", (t) => {
   const f = fixture(t, { extra(repo) {
     fs.renameSync(path.join(repo, "fixtures/old.json"), path.join(repo, "fixtures/new.json"));
@@ -397,6 +496,9 @@ test("target ref advancement retains full-PR merge-base census and policy remova
       [`nested-${tag}`, `<${tag}>\n<${tag}>Example</${tag}>\n${rules}\n</${tag}>`],
       [`quoted-${tag}`, `<${tag} title="</${tag}>">\n${rules}\n</${tag}>`],
     ]),
+    ["listing", `<listing>\n${rules}\n</listing>`],
+    ["backtick-fence-suffix", `\`\`\`md\n\`\`\`still-code\n${rules}\n\`\`\``],
+    ["tilde-fence-suffix", `~~~md\n~~~still-code\n${rules}\n~~~`],
   ]) {
     write(f.repo, "AGENTS.md", invalid);
     git(f.repo, "add", "AGENTS.md");

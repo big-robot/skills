@@ -123,3 +123,35 @@ test("launch scanner preserves literal tag mentions and nested or quoted HTML sc
   fs.writeFileSync(file, `<script>\n<pre title="</pre>">\n${template}\n</script>`);
   assert.equal(invoke().status, 1, "raw text ignores other container tokens");
 });
+
+test("closing fences require matching runs and ASCII space or tab suffixes", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  for (const character of ["`", "~"]) {
+    const open = character.repeat(4);
+    for (const invalidClose of [`${open}still-code`, `${open} md`, `${open}\u00a0`, character.repeat(3), "    " + open, (character === "`" ? "~" : "`").repeat(4)]) {
+      fs.writeFileSync(file, `${open}md\n${invalidClose}\n${template}\n${open}\n`);
+      const rejected = invoke();
+      assert.equal(rejected.status, 1, JSON.stringify(invalidClose));
+      assert.equal(JSON.parse(rejected.stdout).reviewPolicy.ok, false);
+    }
+    for (const close of [open, `  ${open} \t`, `${open}${character}\t `]) {
+      fs.writeFileSync(file, `${open}md\nexample\n${close}\n${template}`);
+      const accepted = invoke();
+      assert.equal(accepted.status, 0, accepted.stderr || accepted.stdout);
+    }
+  }
+});
+
+test("listing examples cannot supply rules and literal listing mentions remain harmless", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  for (const example of [`<listing>\n${template}\n</listing>`, `<LISTING title="</listing>">\n<listing>example</listing>\n${template}\n</LISTING>`]) {
+    fs.writeFileSync(file, example);
+    assert.equal(invoke().status, 1);
+    fs.writeFileSync(file, `${example}\n\n${template}`);
+    assert.equal(invoke().status, 0);
+  }
+  fs.writeFileSync(file, `Mention \`<listing>\` and \\<listing> literally.\n\n${template}`);
+  assert.equal(invoke().status, 0);
+});

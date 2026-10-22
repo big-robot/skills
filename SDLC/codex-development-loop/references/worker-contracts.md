@@ -46,6 +46,8 @@ The field is permitted on implementation and correction receipts and on `no-chan
 
 Before creating either phase's receipt, read [verification-receipt.md](verification-receipt.md) for typed evidence, reference limits, full-diff dispositions, base binding, minimum tier, and version-1 recovery. Each packet carries `expectedBaseOrReviewedHead` as `<ref> <full lowercase SHA>` for the Controller-approved PR base, including correction packets. A reviewed candidate head alone is not the PR base.
 
+For nontrivial implementation, passed `localReview` evidence must reference its guarded audit, using `kind: "guarded-audit"` for small audits and preferably all sizes. Supporting references stay ordinary by omitting kind. Guarded references are verified at every size and bound to Controller audit provenance. Correction keeps ancestor-audit reuse without a new required localReview or general review; explicitly marked correction audit references receive the same checks.
+
 ## Hash-bound receipt
 
 Every `ready-to-push` return is one JSON object no larger than 64 KiB with:
