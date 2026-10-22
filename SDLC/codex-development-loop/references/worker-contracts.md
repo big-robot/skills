@@ -84,7 +84,7 @@ Do not reconstruct evidence from raw logs or repair an invalid Worker return in 
 
 Use the complete return object required by `resolve-review-findings`, then add the hash-bound receipt fields required above:
 
-- `schemaVersion: 1`
+- `schemaVersion: 2`
 - `receiptSha256`
 - `phase: "correction"`
 - `reviewTier`

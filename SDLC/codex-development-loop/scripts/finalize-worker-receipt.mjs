@@ -87,7 +87,7 @@ try {
   if (branch !== packet.branch) throw new Error("live branch does not match worker packet branch");
   if (run("git", ["status", "--porcelain"], options.repo)) throw new Error("worktree is not clean");
   assertReviewPolicy(options.repo);
-  validateReceiptReferences(receipt, options.repo);
+  validateReceiptReferences(receipt, options.repo, { runtime: packet.runtime });
   const baseSha = verificationBase(options.repo, parseApprovedBase(packet.expectedBaseOrReviewedHead), head);
   reconcileVerificationChanges(receipt, options.repo, baseSha);
 

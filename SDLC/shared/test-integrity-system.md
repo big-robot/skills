@@ -50,6 +50,8 @@ Copy the complete [Code Review Rules template](templates/agents-code-review-rule
 
 CDL preflight checks the root file before network-backed launch inspection. It requires a real Code Review Rules section, the supported contract version, and the complete canonical core rules outside fenced examples. A heading or marker alone fails. It reports the governing path and remediation without editing the product repository. Candidate finalization and Controller acceptance recheck the root contract so a delivery cannot remove it silently.
 
+Commented, indented, fenced, and raw HTML code/pre or raw-text examples do not supply governing rules. A separate complete section outside those examples remains valid.
+
 This check establishes structural presence. It does not prove that a model read or followed a rule. [OpenAI documents](https://learn.chatgpt.com/docs/third-party/github#customize-what-codex-reviews) applicable repository AGENTS.md guidance and review-request comments for one-off focus. PR and issue bodies are not a verified delivery mechanism for linked review instructions. The current request helper supports a bare review request plus its tracking marker, so custom request text remains a follow-up.
 
 Local review currently receives a Worker-prepared brief. ADR 0005 proposes stock review without that brief; this change does not resolve the difference. The brief is evidence supplied to a reviewer, not independent proof of the Worker's claims.
@@ -58,6 +60,8 @@ Local review currently receives a Worker-prepared brief. ADR 0005 proposes stock
 
 A ready-to-push receipt uses schema version 2. The Worker finalizer and Controller verifier both reject version 1 with a fresh-receipt instruction. Do not relabel an old receipt as version 2 or reconstruct it in the Controller. Affected runs need a fresh Worker packet and evidence appropriate to the current state. Installation or version changes require coordinated fresh runs under the repository's release policy.
 
+Legacy Claude audit metadata stays readable and immutable as history, but does not satisfy fresh nontrivial schema-2 acceptance. Finish or stop an old run before adopting the new skills, then begin an authorized fresh run with a current packet and initial Codex review. This is not permission to rerun general review inside an old run. Valid existing Codex audits still cover descendant corrections by verified ancestry.
+
 Each acceptance, risk, test, local-review, or correction-check entry has:
 
 - a nonblank claim and required versus exercised boundary;
@@ -65,6 +69,8 @@ Each acceptance, risk, test, local-review, or correction-check entry has:
 - bounded references to nonempty regular files within the checkout.
 
 The validators check types, result consistency, reference containment and line ranges, receipt size, hash, clean checkout, branch, and exact candidate commit. They never execute referenced content. Use ignored checkout-local evidence files for output and sanitized contract excerpts. Do not copy secrets, private payloads, or sensitive customer data into evidence.
+
+Ordinary evidence files are limited to 1 MiB. Guarded review audits directly under the real `sdlc-scratch/audits/` directory may be up to 128 MiB plus 64 KiB, the shared bound for two 64 MiB captured streams and receipt metadata. Larger-than-1-MiB audit references require verified transcript/receipt hashes, pinned runtime, guarded command, audited tree and candidate ancestry; Controller acceptance also binds its recorded audit path, head, brief hash and exit result. Arbitrary large evidence has no exception.
 
 Structured production-surface census and closure objects keep their existing fields. The verifier checks their identifiers and relationships. Valid structure does not establish that a claimed inventory is complete or a test exercised that surface.
 

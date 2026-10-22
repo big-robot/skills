@@ -6,21 +6,95 @@ import { fileURLToPath } from "node:url";
 const template = fileURLToPath(new URL("../../shared/templates/agents-code-review-rules.md", import.meta.url));
 const contract = "test-integrity:v1";
 
-// Ignore examples in fenced code. A pasted example is not a governing section.
+const containers = new Set(["pre", "code", "template"]);
+
+function htmlTagAt(source, offset) {
+  const start = /^<(\/?)(pre|code|template|script|style|textarea|xmp|iframe|noembed|noframes|plaintext)(?=[\s/>]|$)/i.exec(source.slice(offset));
+  if (!start) return null;
+  let quote = null;
+  for (let cursor = offset + start[0].length; cursor < source.length; cursor += 1) {
+    const character = source[cursor];
+    if (quote !== null) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === ">") return { name: start[2].toLowerCase(), closing: start[1] === "/", end: cursor + 1 };
+  }
+  // An unfinished literal container cannot expose governing instructions.
+  return { name: start[2].toLowerCase(), closing: start[1] === "/", end: source.length };
+}
+
+function codeSpanEnd(source, offset, lineEnd) {
+  let length = 1;
+  while (source[offset + length] === "`") length += 1;
+  let cursor = offset + length;
+  while (cursor < lineEnd) {
+    const next = source.indexOf("`", cursor);
+    if (next < 0 || next >= lineEnd) return null;
+    let run = 1;
+    while (source[next + run] === "`") run += 1;
+    if (run === length) return next + run;
+    cursor = next + run;
+  }
+  return null;
+}
+
+// Ignore literal/raw HTML examples as well as Markdown code examples.
 function reviewSection(markdown) {
-  const lines = markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => comment === `<!-- ${contract} -->` ? comment : "").split(/\r?\n/);
+  const source = markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => comment === `<!-- ${contract} -->` ? comment : "");
   const sections = [];
   let fence = null;
+  const stack = [];
+  let rawText = null;
+  let skipUntil = 0;
+  let offset = 0;
   let active = null;
-  for (const line of lines) {
-    const boundary = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (boundary) {
-      if (fence === null) fence = { character: boundary[1][0], length: boundary[1].length };
-      else if (boundary[1][0] === fence.character && boundary[1].length >= fence.length) fence = null;
-      continue;
+  for (const line of source.split("\n")) {
+    const lineStart = offset;
+    const lineEnd = lineStart + line.length;
+    offset = lineEnd + 1;
+    let hidden = stack.length > 0 || rawText !== null || lineStart < skipUntil;
+    if (!hidden) {
+      const boundary = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+      if (boundary) {
+        if (fence === null) fence = { character: boundary[1][0], length: boundary[1].length };
+        else if (boundary[1][0] === fence.character && boundary[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fence !== null || /^(?: {4}| {0,3}\t)/.test(line)) continue;
     }
-    if (fence !== null) continue;
-    if (/^(?: {4}| {0,3}\t)/.test(line)) continue;
+    let cursor = Math.max(lineStart, skipUntil);
+    while (cursor < lineEnd) {
+      if (rawText !== null) {
+        hidden = true;
+        if (rawText === "plaintext") break;
+        const tag = source[cursor] === "<" && source[cursor + 1] === "/" ? htmlTagAt(source, cursor) : null;
+        if (tag?.closing && tag.name === rawText) {
+          rawText = null;
+          skipUntil = tag.end;
+          cursor = tag.end;
+        } else cursor += 1;
+        continue;
+      }
+      if (stack.length === 0) {
+        if (source[cursor] === "\\") { cursor += 2; continue; }
+        if (source[cursor] === "`") {
+          const end = codeSpanEnd(source, cursor, lineEnd);
+          if (end !== null) { cursor = end; continue; }
+          while (source[cursor] === "`") cursor += 1;
+          continue;
+        }
+      }
+      const tag = source[cursor] === "<" ? htmlTagAt(source, cursor) : null;
+      if (tag === null) { cursor += 1; continue; }
+      hidden = true;
+      skipUntil = tag.end;
+      cursor = tag.end;
+      if (tag.closing) {
+        if (stack.at(-1) === tag.name) stack.pop();
+      } else if (containers.has(tag.name)) stack.push(tag.name);
+      else rawText = tag.name;
+    }
+    if (hidden) continue;
     if (/^ {0,3}#{1,2}\s/.test(line)) {
       active = /^ {0,3}## Code Review Rules\s*#*\s*$/.test(line) ? [] : null;
       if (active) sections.push(active);

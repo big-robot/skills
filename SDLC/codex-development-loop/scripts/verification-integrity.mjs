@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { MAX_REVIEW_AUDIT_BYTES, verifyReviewAudit } from "./review-audit-receipt.mjs";
 
 const SHA = /^[0-9a-f]{40}$/;
 const EVIDENCE_KEYS = ["acceptanceEvidence", "riskEvidence", "tests", "localReview", "checks"];
@@ -130,7 +131,7 @@ export function validateVerificationShape(receipt) {
   });
 }
 
-export function validateReceiptReferences(receipt, repo) {
+export function validateReceiptReferences(receipt, repo, { runtime = null, localAudit = null } = {}) {
   const checkout = fs.realpathSync(repo);
   const all = [];
   for (const key of EVIDENCE_KEYS) for (const entry of receipt[key] ?? []) all.push(...entry.references);
@@ -144,9 +145,31 @@ export function validateReceiptReferences(receipt, repo) {
     const relative = path.relative(checkout, resolved);
     if (!relative || relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) throw new Error(`evidence reference escapes checkout: ${ref.path}`);
     const stat = fs.lstatSync(file);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0 || stat.size > MAX_REFERENCE_BYTES) throw new Error(`evidence reference must be a nonempty regular file no larger than 1 MiB: ${ref.path}`);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error(`evidence reference must be a nonempty regular non-symlink file: ${ref.path}`);
+    let contents;
+    if (stat.size > MAX_REFERENCE_BYTES) {
+      const auditRoot = path.join(checkout, "sdlc-scratch", "audits");
+      if (stat.size > MAX_REVIEW_AUDIT_BYTES || path.dirname(file) !== auditRoot || resolved !== file
+        || fs.realpathSync(auditRoot) !== auditRoot || !fs.lstatSync(auditRoot).isDirectory()) {
+        throw new Error(`evidence reference exceeds 1 MiB and is not a bounded guarded audit: ${ref.path}`);
+      }
+      if (typeof runtime?.codexBin !== "string" || typeof runtime?.codexVersion !== "string" || !runtime.codexVersion.trim()) {
+        throw new Error("large guarded audit reference requires the pinned Codex runtime");
+      }
+      if (localAudit !== null && (localAudit.engine !== "codex" || path.resolve(checkout, localAudit.outputFile ?? "") !== file)) {
+        throw new Error("large guarded audit reference does not match Controller audit provenance");
+      }
+      contents = fs.readFileSync(file, "utf8");
+      const { receipt: audit } = verifyReviewAudit(contents, { codexBin: runtime.codexBin, codexVersion: runtime.codexVersion,
+        ...(localAudit === null ? {} : { headSha: localAudit.headSha, promptSha256: localAudit.promptSha256, exitCode: localAudit.exitCode }) });
+      if (JSON.stringify(audit.command) !== JSON.stringify(["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"])) {
+        throw new Error("large guarded audit reference lacks the guarded review command");
+      }
+      git(repo, ["merge-base", "--is-ancestor", audit.headSha, receipt.localCommitSha]);
+      if (git(repo, ["rev-parse", `${audit.headSha}^{tree}`]).trim() !== audit.treeSha) throw new Error("large guarded audit reference tree does not match its audited commit");
+    }
     if (ref.startLine !== undefined) {
-      const lines = fs.readFileSync(file, "utf8").split("\n");
+      const lines = (contents ?? fs.readFileSync(file, "utf8")).split("\n");
       const count = lines.length - (lines.at(-1) === "" ? 1 : 0);
       if ((ref.endLine ?? ref.startLine) > count) throw new Error(`evidence reference line range is unresolved: ${ref.path}`);
     }
@@ -179,9 +202,10 @@ export function isVerificationPath(file) {
   return /(^|\/)(?:tests?|specs?|__tests__|fixtures?|__fixtures__|snapshots?|__snapshots__)(\/|[._-])/i.test(file)
     || /(?:^|[./_-])(?:test|spec|fixture|snapshot)(?:[._-]|$)/i.test(path.basename(file))
     || /(^|\/)(?:\.github\/workflows|\.circleci|\.buildkite|\.husky)(\/|$)/i.test(file)
-    || /(^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Makefile|justfile|Taskfile\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile|azure-pipelines\.ya?ml|tox\.ini|pytest\.ini|pyproject\.toml|setup\.cfg|Cargo\.toml|go\.mod|Gemfile|Rakefile|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(file)
-    || /(^|\/)(?:vitest|vite|jest|playwright|cypress|karma|nyc|ava|mocha|tap|webdriver|wdio|jasmine|testcafe|wallaby|rollup|webpack|babel|eslint|tsconfig)(?:\.|$)/i.test(path.basename(file))
-    || /(^|\/)\.(?:mocharc|nycrc|taprc|c8rc)(?:\.|$)/i.test(file);
+    || /(^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Makefile|justfile|Taskfile\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile|azure-pipelines\.ya?ml|conftest\.py|tox\.ini|pytest\.ini|pyproject\.toml|setup\.cfg|Cargo\.toml|go\.mod|Gemfile|Rakefile|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(file)
+    || /(^|\/)(?:vitest|vite|jest|playwright|cypress|karma|nyc|c8|coverage|ava|mocha|tap|webdriver|wdio|jasmine|testcafe|wallaby|rollup|webpack|babel|eslint|tsconfig)(?:\.|$)/i.test(path.basename(file))
+    || /(^|\/)\.(?:mocharc|nycrc|taprc|c8rc|coveragerc|simplecov)(?:\.|$)/i.test(file)
+    || /(^|\/)\.?(?:codecov|coveralls)\.ya?ml$/i.test(file);
 }
 
 export function reconcileVerificationChanges(receipt, repo, baseSha) {

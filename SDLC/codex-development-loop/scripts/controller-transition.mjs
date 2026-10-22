@@ -109,13 +109,14 @@ function verifyWorkerReceipt(options, ledger) {
   let baseSha;
   try {
     assertReviewPolicy(options.repo);
-    validateReceiptReferences(receipt, options.repo);
+    validateReceiptReferences(receipt, options.repo, { runtime: ledger.runtime, localAudit: ledger.localAudit });
     baseSha = verificationBase(options.repo, ledger.baseRef, head);
     reconcileVerificationChanges(receipt, options.repo, baseSha);
   } catch (error) {
     fail(error.message);
   }
   if (receipt.reviewTier !== "trivial") {
+    if (ledger.localAudit.engine === "claude") fail("legacy Claude audit provenance remains historical; finish or stop the old run before adopting schema 2, then start an authorized fresh run with a current packet and guarded Codex initial review; preserve the legacy audit unchanged");
     if (ledger.localAudit.engine !== "codex") fail("nontrivial Worker returns require Codex local audit provenance; inline review cannot satisfy standard or large-complex review");
     run(process.execPath, [path.join(scriptDir, "assert-local-audit-covered.mjs"), "--file", options.ledger, "--head-sha", head], options.repo);
   }

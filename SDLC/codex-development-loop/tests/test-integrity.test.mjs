@@ -6,12 +6,19 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { receiptHash } from "../scripts/worker-receipt.mjs";
-import { createReviewAuditReceipt, serializeReviewAudit, sha256 } from "../scripts/review-audit-receipt.mjs";
+import { createReviewAuditReceipt, MAX_REVIEW_AUDIT_BYTES, serializeReviewAudit, sha256 } from "../scripts/review-audit-receipt.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SCRIPTS = path.join(ROOT, "scripts");
 const CONTRACT = fileURLToPath(new URL("../references/worker-contracts.md", import.meta.url));
 const RULES = path.join(ROOT, "../shared/templates/agents-code-review-rules.md");
+
+test("both phase-specific Worker receipt instructions require the supported schema", () => {
+  const contract = fs.readFileSync(path.join(SCRIPTS, "../references/worker-contracts.md"), "utf8");
+  const versions = [...contract.matchAll(/^- `schemaVersion: (\d+)`/gm)].map((match) => Number(match[1]));
+  assert.equal(versions.length, 2, "shared and correction instructions each declare their version");
+  assert.deepEqual(versions, [2, 2]);
+});
 
 function run(command, args, cwd) {
   const env = { ...process.env };
@@ -52,12 +59,12 @@ function ledger(repo, head) {
   };
 }
 
-function writeAudit(repo, head, promptSha256) {
-  const transcript = `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "No findings." } })}\n${JSON.stringify({ type: "turn.completed" })}\n`;
+function writeAudit(repo, head, promptSha256, { message = "No findings.", codexBin = "/test/codex", treeSha = git(repo, "rev-parse", `${head}^{tree}`) } = {}) {
+  const transcript = `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: message } })}\n${JSON.stringify({ type: "turn.completed" })}\n`;
   const receipt = createReviewAuditReceipt({
-    baseRef: "main", baseSha: head, headSha: head, treeSha: git(repo, "rev-parse", `${head}^{tree}`),
+    baseRef: "main", baseSha: head, headSha: head, treeSha,
     briefSha256: promptSha256, inputSha256: sha256(`${promptSha256}:${head}`),
-    codexBin: "/test/codex", codexVersion: "codex-cli fixture",
+    codexBin, codexVersion: "codex-cli fixture",
     command: ["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"],
     exitCode: 0, transcript, usage: null,
   });
@@ -200,6 +207,76 @@ test("standard review rejects an inline audit and preserves valid Codex ancestor
   assert.equal(JSON.parse(ancestor.stdout).permittedNextTransition, "push-candidate");
 });
 
+test("legacy Claude audit remains readable and unchanged but cannot become fresh nontrivial receipt provenance", (t) => {
+  for (const phase of ["implementation", "correction"]) {
+    const f = fixture(t, { phase });
+    f.state.localAudit.engine = "claude";
+    fs.writeFileSync(f.ledgerFile, JSON.stringify(f.state));
+    const original = fs.readFileSync(f.ledgerFile, "utf8");
+    const validated = run(process.execPath, [path.join(SCRIPTS, "validate-ledger.mjs"), "--file", f.ledgerFile], ROOT);
+    assert.equal(validated.status, 0, validated.stderr);
+    const rejected = f.verify(f.draft);
+    assert.equal(rejected.status, 30, rejected.stderr);
+    assert.match(rejected.stderr, /legacy.*fresh.*run/i);
+    assert.equal(fs.readFileSync(f.ledgerFile, "utf8"), original);
+  }
+});
+
+test("large guarded audit references preserve hash, runtime, tree, ancestry and size boundaries", (t) => {
+  const f = fixture(t, { phase: "correction" });
+  f.packet.runtime.codexBin = fs.realpathSync(process.execPath);
+  f.packet.runtime.codexVersion = "codex-cli fixture";
+  f.state.runtime = { ...f.packet.runtime };
+  f.state.localAudit.headSha = f.base;
+  fs.writeFileSync(f.packetFile, JSON.stringify(f.packet));
+  fs.writeFileSync(f.ledgerFile, JSON.stringify(f.state));
+  const options = { message: "review detail ".repeat(90000), codexBin: f.packet.runtime.codexBin };
+  writeAudit(f.repo, f.base, f.state.localAudit.promptSha256, options);
+  const audit = path.join(f.repo, "sdlc-scratch/audits/review.jsonl");
+  const original = fs.readFileSync(audit, "utf8");
+  assert.ok(Buffer.byteLength(original) > 1024 * 1024);
+  const draft = { ...f.draft, localReview: [{ ...evidence(), references: [{ path: "sdlc-scratch/audits/review.jsonl", startLine: 1, endLine: 3 }] }] };
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  const reject = (body = draft) => {
+    assert.notEqual(f.finalize(body).status, 0);
+    assert.equal(f.verify(body).status, 30);
+  };
+  fs.writeFileSync(audit, original.replace("review detail", "edited detail"));
+  reject();
+  writeAudit(f.repo, f.base, f.state.localAudit.promptSha256, { ...options, codexBin: "/unbound/codex" });
+  reject();
+  writeAudit(f.repo, f.base, f.state.localAudit.promptSha256, { ...options, treeSha: "b".repeat(40) });
+  reject();
+  git(f.repo, "checkout", "--orphan", "other");
+  git(f.repo, "add", ".");
+  git(f.repo, "commit", "-m", "divergent audit");
+  const divergent = git(f.repo, "rev-parse", "HEAD");
+  git(f.repo, "checkout", "feature");
+  writeAudit(f.repo, divergent, f.state.localAudit.promptSha256, options);
+  reject();
+  fs.writeFileSync(audit, original);
+  write(f.repo, "sdlc-scratch/ordinary.jsonl", original);
+  reject({ ...draft, localReview: [{ ...evidence(), references: [{ path: "sdlc-scratch/ordinary.jsonl" }] }] });
+  fs.truncateSync(audit, MAX_REVIEW_AUDIT_BYTES + 1);
+  reject();
+});
+
+test("pytest hooks and coverage exclusion configuration require complete dispositions and standard review", (t) => {
+  const files = ["conftest.py", "app/conftest.py", ".coveragerc", "app/.coveragerc", "codecov.yml", ".codecov.yaml", ".coveralls.yml", ".simplecov", ".simplecov.rb", "coverage.config.mjs", "c8.config.js"];
+  const f = fixture(t, { changes: false, extra(repo) { for (const file of files) write(repo, file, "# verification configuration\n"); } });
+  const draft = { ...f.draft, verificationChanges: files.map((file) => f.disposition(file, "A")) };
+  for (const file of files) {
+    const omitted = { ...draft, verificationChanges: draft.verificationChanges.filter((entry) => entry.path !== file) };
+    assert.match(f.finalize(omitted).stderr, /omits changed file/, file);
+    assert.equal(f.verify(omitted).status, 30, file);
+  }
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
+  assert.equal(f.verify({ ...draft, reviewTier: "trivial" }).status, 30);
+});
+
 test("deletions, renames, runner configuration, snapshots and CI changes require dispositions", (t) => {
   const f = fixture(t, { extra(repo) {
     fs.renameSync(path.join(repo, "fixtures/old.json"), path.join(repo, "fixtures/new.json"));
@@ -252,6 +329,11 @@ test("target ref advancement retains full-PR merge-base census and policy remova
     ["removed", "## Code Review Rules\n\n<!-- test-integrity:v1 -->\n"],
     ["commented", rules.split("\n").map((line) => line.startsWith("- TI-") ? `<!-- ${line} -->` : line).join("\n")],
     ["indented", rules.split("\n").map((line) => line.startsWith("- TI-") ? `    ${line}` : line).join("\n")],
+    ...["pre", "code", "script", "textarea", "template"].map((tag) => [tag, `<${tag}>\n${rules}\n</${tag}>`]),
+    ...["pre", "code", "template"].flatMap((tag) => [
+      [`nested-${tag}`, `<${tag}>\n<${tag}>Example</${tag}>\n${rules}\n</${tag}>`],
+      [`quoted-${tag}`, `<${tag} title="</${tag}>">\n${rules}\n</${tag}>`],
+    ]),
   ]) {
     write(f.repo, "AGENTS.md", invalid);
     git(f.repo, "add", "AGENTS.md");
@@ -264,5 +346,16 @@ test("target ref advancement retains full-PR merge-base census and policy remova
     const verified = f.verify(draft, head);
     assert.equal(verified.status, 30, verified.stderr);
     assert.match(verified.stderr, /review policy|TI-01|AGENTS.md/i);
+  }
+  for (const mention of ["Mention `<pre>`.", "Mention ``<pre> `and` <code>``.", "Mention \\<pre> and \\<template>."]) {
+    write(f.repo, "AGENTS.md", `${mention}\n\n${rules}`);
+    git(f.repo, "add", "AGENTS.md");
+    git(f.repo, "commit", "-m", "retain governing rules after literal tag mention");
+    const head = git(f.repo, "rev-parse", "HEAD");
+    const draft = { ...f.draft, localCommitSha: head };
+    const finalized = f.finalize(draft);
+    assert.equal(finalized.status, 0, finalized.stderr);
+    const verified = f.verify(draft, head);
+    assert.equal(verified.status, 0, verified.stderr);
   }
 });

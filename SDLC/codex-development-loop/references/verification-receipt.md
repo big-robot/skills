@@ -21,6 +21,8 @@ Every entry in implementation `acceptanceEvidence`, `riskEvidence`, `tests`, and
 
 Each evidence entry has 1 to 16 references. Paths are checkout-relative, at most 1,024 UTF-8 bytes, without traversal. References must resolve within the checkout to nonempty regular non-symlink files no larger than 1 MiB. Optional positive line numbers must resolve and be ordered. References cannot use shell expressions, URLs, or absolute paths. Validators do not execute content. Retain sanitized output or authorized contract excerpts under ignored checkout-local evidence paths.
 
+Guarded Codex audit references have one bounded exception: a regular file directly under the real `sdlc-scratch/audits/` directory may exceed 1 MiB up to 128 MiB plus 64 KiB. This shared serialization limit covers two captured streams of at most 64 MiB each plus receipt metadata. Both boundaries verify the completed wrapper transcript and hash, pinned Codex binary/version, guarded command, audited commit tree, and ancestry to the candidate. The Controller also matches the reference path, audited head, brief hash, and exit result to its authoritative `localAudit`. Arbitrary large logs, relocated copies, invalid audits, and references beyond this bound are rejected. Ordinary references retain the 1 MiB limit.
+
 A syntactically valid failed/not-run result is honest transport, not permission to ignore a required check. Controller semantic acceptance still checks outstanding gaps, exercised boundaries, oracle authority, and actual terminal output. Never report an assertion or self-authored excerpt as independent authority.
 
 ## Verification change dispositions
@@ -52,6 +54,8 @@ The finalizer computes the merge base from the Controller-approved packet base a
 The full Git diff uses no rename detection. Renames therefore require deletion and addition dispositions. Every automatically detected verification file must be present exactly once with matching status. Additional declared verification paths are allowed only if they occur in the same diff. Inspect the complete changed-file list for custom test paths or indirect verification scripts and add dispositions before acceptance. Any declared verification change requires at least standard local review; the Controller verifies this independently.
 
 The conventional detector covers test/spec directories and filenames, fixtures/snapshots, common runner/config files, package manifests and locks, CI directories, hooks, and build/test command files. It is conservative and can include files whose verification effect is small. Record that reason and proportionate proof. It cannot discover every custom naming convention or determine semantic weakening.
+
+Conventional hooks include root and nested `conftest.py`. Coverage configuration includes `.coveragerc`, `.simplecov` variants, `coverage.*`, `c8.*`, the existing nyc/c8 rc files, and Codecov/Coveralls YAML files. These can change collection, fixtures, or exclusions even when no assertion-bearing test file changes.
 
 ## Existing structured closure fields
 

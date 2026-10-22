@@ -59,6 +59,29 @@ test("missing review rules stop launch before GitHub inspection", (t) => {
   assert.equal(JSON.parse(result.stdout).reviewPolicy.ok, false);
 });
 
+test("launch preflight ignores raw HTML examples but accepts a separate governing section", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  const examples = [
+    `<pre>\n${template}\n</pre>`, `<code>\n${template}\n</code>`,
+    `<PRE class="example">\n<code>\n${template}\n</code>\n</PRE>`,
+    `<pre\n class="example">\n${template}\n</pre>`,
+    ...["script", "style", "textarea", "xmp", "iframe", "noembed", "noframes", "template"].map((tag) => `<${tag}>\n${template}\n</${tag}>`),
+  ];
+  for (const example of examples) {
+    fs.writeFileSync(file, example);
+    const rejected = invoke();
+    assert.equal(rejected.status, 1, example.slice(0, 40));
+    assert.equal(JSON.parse(rejected.stdout).reviewPolicy.ok, false);
+    fs.writeFileSync(file, `${example}\n\n${template}`);
+    const accepted = invoke();
+    assert.equal(accepted.status, 0, accepted.stderr);
+    assert.equal(JSON.parse(accepted.stdout).reviewPolicy.ruleIds.length, 6);
+  }
+  fs.writeFileSync(file, `<plaintext>\n${template}\n</plaintext>\n${template}`);
+  assert.equal(invoke().status, 1, "plaintext consumes the remainder even after a closing token");
+});
+
 test("review policy cannot be supplied by a root AGENTS symlink", (t) => {
   const { repo, invoke } = fixture(t);
   fs.writeFileSync(path.join(repo, "other.md"), template);
@@ -66,4 +89,37 @@ test("review policy cannot be supplied by a root AGENTS symlink", (t) => {
   const result = invoke();
   assert.equal(result.status, 1, result.stderr);
   assert.match(JSON.parse(result.stdout).reviewPolicy.errors.join(" "), /non-symlink/);
+});
+
+test("launch scanner preserves literal tag mentions and nested or quoted HTML scope", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  for (const mention of [
+    "Mention the literal `<pre>` tag in documentation.",
+    "Mention the literal ``<pre> `and` <code>`` tags.",
+    "Mention the escaped \\<pre> and \\<template> tags.",
+    "Mention `</pre>` and ``<template title=\"</template>\">``.",
+    "Mention the literal `<plaintext>` tag.",
+    "Mention the custom <pre-example> tag.",
+  ]) {
+    fs.writeFileSync(file, `${mention}\n\n${template}`);
+    const result = invoke();
+    assert.equal(result.status, 0, `${mention}: ${result.stderr || result.stdout}`);
+  }
+  for (const tag of ["pre", "code", "template"]) {
+    for (const example of [
+      `<${tag}>\n<${tag}>Example</${tag}>\n${template}\n</${tag}>`,
+      `<${tag} title="</${tag}>">\n${template}\n</${tag}>`,
+      `<${tag}\n title='</${tag}>'>\n${template}\n</${tag}>`,
+    ]) {
+      fs.writeFileSync(file, example);
+      const rejected = invoke();
+      assert.equal(rejected.status, 1, example.slice(0, 60));
+      fs.writeFileSync(file, `${example}\n\n${template}`);
+      const accepted = invoke();
+      assert.equal(accepted.status, 0, accepted.stderr || accepted.stdout);
+    }
+  }
+  fs.writeFileSync(file, `<script>\n<pre title="</pre>">\n${template}\n</script>`);
+  assert.equal(invoke().status, 1, "raw text ignores other container tokens");
 });
