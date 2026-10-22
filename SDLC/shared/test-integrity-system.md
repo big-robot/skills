@@ -22,7 +22,7 @@ Planning, plan review, delivery and correction load the shared [test-quality gui
 
 Never weaken verification solely to obtain a passing result. Inspect changed assertions and expectations, removed or renamed tests, fixtures, snapshots, skips, focused tests, discovery patterns, exclusions, runner configuration and CI. Approved contract updates may legitimately change tests and source together when the reason and retained or replacement proof are clear. Domain-required observable behavior is legitimate; production branches that recognize test values without a domain contract are suspect.
 
-Use existing receipt evidence strings to list each modified, deleted or renamed existing test, its authoritative reason and retained or replacement proof. Include related fixture, snapshot and configuration changes. Receipt fields and schema are unchanged. The Controller checks the notes against the full diff; there is no new automatic census or reference verifier.
+Account for each modified, deleted or renamed existing test, its authoritative reason and retained or replacement proof, including related fixture, snapshot and configuration changes. Keep this accounting inline when it fits or in existing referenced verification evidence. Existing receipt evidence strings may summarize and give a resolvable local reference to the complete verification record through the existing bounded supporting-evidence transport. The Controller reads the full accounting and checks it against the diff; do not omit or truncate proof to fit the receipt. Receipt fields, schema and size limit are unchanged; there is no new automatic census or reference verifier.
 
 When intended behavior is unresolved, report:
 
