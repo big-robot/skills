@@ -131,8 +131,16 @@ export function validateVerificationShape(receipt) {
   });
 }
 
+function referenceLineCount(contents) {
+  let count = contents.endsWith("\n") ? 0 : 1;
+  let offset = -1;
+  while ((offset = contents.indexOf("\n", offset + 1)) !== -1) count += 1;
+  return count;
+}
+
 export function validateReceiptReferences(receipt, repo, { runtime = null, localAudit = null } = {}) {
   const checkout = fs.realpathSync(repo);
+  const validated = new Map();
   const all = [];
   for (const key of EVIDENCE_KEYS) for (const entry of receipt[key] ?? []) all.push(...entry.references);
   for (const change of receipt.verificationChanges) {
@@ -146,32 +154,42 @@ export function validateReceiptReferences(receipt, repo, { runtime = null, local
     if (!relative || relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) throw new Error(`evidence reference escapes checkout: ${ref.path}`);
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error(`evidence reference must be a nonempty regular non-symlink file: ${ref.path}`);
-    let contents;
+    const identity = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    let metadata = validated.get(resolved);
+    if (metadata && metadata.identity !== identity) throw new Error(`evidence reference changed during validation: ${ref.path}`);
     if (stat.size > MAX_REFERENCE_BYTES) {
       const auditRoot = path.join(checkout, "sdlc-scratch", "audits");
       if (stat.size > MAX_REVIEW_AUDIT_BYTES || path.dirname(file) !== auditRoot || resolved !== file
         || fs.realpathSync(auditRoot) !== auditRoot || !fs.lstatSync(auditRoot).isDirectory()) {
         throw new Error(`evidence reference exceeds 1 MiB and is not a bounded guarded audit: ${ref.path}`);
       }
-      if (typeof runtime?.codexBin !== "string" || typeof runtime?.codexVersion !== "string" || !runtime.codexVersion.trim()) {
-        throw new Error("large guarded audit reference requires the pinned Codex runtime");
+    }
+    if (!metadata) {
+      let lineCount = null;
+      if (stat.size > MAX_REFERENCE_BYTES) {
+        if (typeof runtime?.codexBin !== "string" || typeof runtime?.codexVersion !== "string" || !runtime.codexVersion.trim()) {
+          throw new Error("large guarded audit reference requires the pinned Codex runtime");
+        }
+        if (localAudit !== null && (localAudit.engine !== "codex" || path.resolve(checkout, localAudit.outputFile ?? "") !== file)) {
+          throw new Error("large guarded audit reference does not match Controller audit provenance");
+        }
+        const contents = fs.readFileSync(file, "utf8");
+        const { receipt: audit } = verifyReviewAudit(contents, { codexBin: runtime.codexBin, codexVersion: runtime.codexVersion,
+          ...(localAudit === null ? {} : { headSha: localAudit.headSha, promptSha256: localAudit.promptSha256, exitCode: localAudit.exitCode }) });
+        if (JSON.stringify(audit.command) !== JSON.stringify(["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"])) {
+          throw new Error("large guarded audit reference lacks the guarded review command");
+        }
+        git(repo, ["merge-base", "--is-ancestor", audit.headSha, receipt.localCommitSha]);
+        if (git(repo, ["rev-parse", `${audit.headSha}^{tree}`]).trim() !== audit.treeSha) throw new Error("large guarded audit reference tree does not match its audited commit");
+        lineCount = referenceLineCount(contents);
       }
-      if (localAudit !== null && (localAudit.engine !== "codex" || path.resolve(checkout, localAudit.outputFile ?? "") !== file)) {
-        throw new Error("large guarded audit reference does not match Controller audit provenance");
-      }
-      contents = fs.readFileSync(file, "utf8");
-      const { receipt: audit } = verifyReviewAudit(contents, { codexBin: runtime.codexBin, codexVersion: runtime.codexVersion,
-        ...(localAudit === null ? {} : { headSha: localAudit.headSha, promptSha256: localAudit.promptSha256, exitCode: localAudit.exitCode }) });
-      if (JSON.stringify(audit.command) !== JSON.stringify(["exec", "--ephemeral", "--sandbox", "read-only", "review", "--json", "-"])) {
-        throw new Error("large guarded audit reference lacks the guarded review command");
-      }
-      git(repo, ["merge-base", "--is-ancestor", audit.headSha, receipt.localCommitSha]);
-      if (git(repo, ["rev-parse", `${audit.headSha}^{tree}`]).trim() !== audit.treeSha) throw new Error("large guarded audit reference tree does not match its audited commit");
+      // Retain only identity and line count; large transcript strings die here.
+      metadata = { identity, lineCount };
+      validated.set(resolved, metadata);
     }
     if (ref.startLine !== undefined) {
-      const lines = (contents ?? fs.readFileSync(file, "utf8")).split("\n");
-      const count = lines.length - (lines.at(-1) === "" ? 1 : 0);
-      if ((ref.endLine ?? ref.startLine) > count) throw new Error(`evidence reference line range is unresolved: ${ref.path}`);
+      metadata.lineCount ??= referenceLineCount(fs.readFileSync(file, "utf8"));
+      if ((ref.endLine ?? ref.startLine) > metadata.lineCount) throw new Error(`evidence reference line range is unresolved: ${ref.path}`);
     }
   }
 }

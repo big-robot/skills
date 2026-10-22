@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { receiptHash } from "../scripts/worker-receipt.mjs";
 import { createReviewAuditReceipt, MAX_REVIEW_AUDIT_BYTES, serializeReviewAudit, sha256 } from "../scripts/review-audit-receipt.mjs";
+import { validateReceiptReferences } from "../scripts/verification-integrity.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SCRIPTS = path.join(ROOT, "scripts");
@@ -260,6 +263,66 @@ test("large guarded audit references preserve hash, runtime, tree, ancestry and 
   reject({ ...draft, localReview: [{ ...evidence(), references: [{ path: "sdlc-scratch/ordinary.jsonl" }] }] });
   fs.truncateSync(audit, MAX_REVIEW_AUDIT_BYTES + 1);
   reject();
+});
+
+test("repeated audit references perform one unique file validation per call and still check every line range", (t) => {
+  const f = fixture(t, { phase: "correction" });
+  const runtime = { ...f.packet.runtime, codexBin: fs.realpathSync(process.execPath), codexVersion: "codex-cli fixture" };
+  writeAudit(f.repo, f.base, f.state.localAudit.promptSha256, { message: "review detail ".repeat(90000), codexBin: runtime.codexBin });
+  const audit = fs.realpathSync(path.join(f.repo, "sdlc-scratch/audits/review.jsonl"));
+  const other = path.join(path.dirname(audit), "other.jsonl");
+  const original = fs.readFileSync(audit, "utf8");
+  fs.writeFileSync(other, original);
+  const repeated = Array.from({ length: 40 }, (_, index) => ({ ...evidence(), references: [{ path: "sdlc-scratch/audits/review.jsonl", ...(index === 0 ? {} : { startLine: 1, endLine: 3 }) }] }));
+  const receipt = { ...f.draft, localReview: repeated };
+  const reads = new Map();
+  const bytes = new Map();
+  const gitCalls = [];
+  const realRead = fs.readFileSync;
+  const realSpawn = childProcess.spawnSync;
+  t.mock.method(fs, "readFileSync", (...args) => {
+    const value = realRead(...args);
+    const file = typeof args[0] === "string" ? path.resolve(args[0]) : null;
+    if (file === audit || file === other) {
+      reads.set(file, (reads.get(file) ?? 0) + 1);
+      bytes.set(file, (bytes.get(file) ?? 0) + Buffer.byteLength(value));
+    }
+    return value;
+  });
+  t.mock.method(childProcess, "spawnSync", (...args) => {
+    if (args[0] === "git") gitCalls.push(args[1]);
+    return realSpawn(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    validateReceiptReferences(receipt, f.repo, { runtime });
+    assert.equal(reads.get(audit), 1, "duplicate evidence must not reread the complete audit");
+    assert.equal(bytes.get(audit), Buffer.byteLength(original));
+    assert.equal(gitCalls.length, 2, "ancestry and tree inspection run once for the unique audit");
+
+    reads.clear(); bytes.clear(); gitCalls.length = 0;
+    const laterInvalid = { ...receipt, localReview: [...repeated, { ...evidence(), references: [{ path: "sdlc-scratch/audits/review.jsonl", startLine: 4 }] }] };
+    assert.throws(() => validateReceiptReferences(laterInvalid, f.repo, { runtime }), /line range is unresolved/);
+    assert.equal(reads.get(audit), 1, "cached line counts still reject a later invalid range");
+    assert.equal(gitCalls.length, 2);
+
+    reads.clear(); bytes.clear(); gitCalls.length = 0;
+    const twoUnique = { ...receipt, localReview: [...repeated, ...repeated.map((entry) => ({ ...entry, references: [{ path: "sdlc-scratch/audits/other.jsonl", startLine: 1, endLine: 3 }] }))] };
+    validateReceiptReferences(twoUnique, f.repo, { runtime });
+    assert.deepEqual([...reads], [[audit, 1], [other, 1]], "each distinct audit must receive its own validation");
+    assert.equal(gitCalls.length, 4);
+
+    reads.clear(); bytes.clear(); gitCalls.length = 0;
+    fs.writeFileSync(audit, original.replace("review detail", "edited detail"));
+    assert.throws(() => validateReceiptReferences(receipt, f.repo, { runtime }), /transcript hash is invalid/);
+    assert.equal(reads.get(audit), 1, "a later invocation must reread changed evidence");
+    fs.writeFileSync(audit, original);
+    fs.writeFileSync(other, original.replace("review detail", "edited detail"));
+    assert.throws(() => validateReceiptReferences(twoUnique, f.repo, { runtime }), /transcript hash is invalid/, "a distinct invalid audit cannot reuse the first audit's proof");
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
 });
 
 test("pytest hooks and coverage exclusion configuration require complete dispositions and standard review", (t) => {
