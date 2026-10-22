@@ -225,11 +225,28 @@ export function verificationBase(repo, baseRefOrSha, headSha) {
 
 // Conservative conventional-layout detector. Custom paths can be declared in the
 // receipt; the Controller still inspects the complete diff for semantic omissions.
+// Keep each supported ecosystem's manifests, runners and resolved-dependency
+// inputs together. Names match at any depth, independently of project roots.
+export const CONVENTIONAL_VERIFICATION_FILES = Object.freeze(Object.fromEntries(Object.entries({
+  javascript: ["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"],
+  python: ["noxfile.py", "pyproject.toml", "poetry.lock", "pdm.lock", "uv.lock", "Pipfile", "Pipfile.lock", "setup.cfg", "setup.py", "requirements.txt", "requirements.in", "tox.ini", "pytest.ini", "conftest.py"],
+  rust: ["Cargo.toml", "Cargo.lock"],
+  go: ["go.mod", "go.sum", "go.work", "go.work.sum"],
+  ruby: ["Gemfile", "Gemfile.lock", "Rakefile"],
+  maven: ["pom.xml"],
+  gradle: ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.lockfile"],
+  automation: ["Makefile", "justfile", "Taskfile.yml", "Taskfile.yaml", ".gitlab-ci.yml", ".gitlab-ci.yaml", "Jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml"],
+}).map(([ecosystem, files]) => [ecosystem, Object.freeze(files)])));
+const conventionalVerificationNames = new Set(Object.values(CONVENTIONAL_VERIFICATION_FILES).flat().map((file) => file.toLowerCase()));
+
 export function isVerificationPath(file) {
   return /(^|\/)(?:tests?|specs?|__tests__|fixtures?|__fixtures__|snapshots?|__snapshots__)(\/|[._-])/i.test(file)
     || /(?:^|[./_-])(?:test|spec|fixture|snapshot)(?:[._-]|$)/i.test(path.basename(file))
     || /(^|\/)(?:\.github\/(?:workflows|actions)|\.circleci|\.buildkite|\.husky)(\/|$)/i.test(file)
-    || /(^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Makefile|justfile|Taskfile\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile|azure-pipelines\.ya?ml|conftest\.py|tox\.ini|pytest\.ini|pyproject\.toml|setup\.cfg|Cargo\.toml|go\.mod|Gemfile|Rakefile|pom\.xml|build\.gradle(?:\.kts)?)$/i.test(file)
+    || conventionalVerificationNames.has(path.basename(file).toLowerCase())
+    || /^requirements(?:[._-][^/]*)?\.(?:txt|in)$/i.test(path.basename(file))
+    || /(^|\/)requirements\/.+\.(?:txt|in)$/i.test(file)
+    || /(^|\/)gradle\/dependency-locks\/.+\.lockfile$/i.test(file)
     || /(^|\/)(?:vitest|vite|jest|playwright|cypress|karma|nyc|c8|coverage|ava|mocha|tap|webdriver|wdio|jasmine|testcafe|wallaby|rollup|webpack|babel|eslint|tsconfig)(?:\.|$)/i.test(path.basename(file))
     || /(^|\/)\.(?:mocharc|nycrc|taprc|c8rc|coveragerc|simplecov)(?:\.|$)/i.test(file)
     || /(^|\/)\.?(?:codecov|coveralls)\.ya?ml$/i.test(file);

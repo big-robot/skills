@@ -4,11 +4,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const preflight = path.join(root, "scripts/preflight.mjs");
 const template = fs.readFileSync(path.join(root, "../shared/templates/agents-code-review-rules.md"), "utf8");
+
+test("portable policy parser retains the verified upstream bundle and dependency notices", () => {
+  const vendor = path.join(root, "scripts/vendor/commonmark");
+  const bytes = fs.readFileSync(path.join(vendor, "commonmark-0.31.2.cjs"));
+  assert.equal(bytes.length, 381239);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), "4d124568b8d4490df72fea8aa0f9a144c5b581b0de0eb63d3a996104b2797edc");
+  for (const name of ["commonmark", "entities", "mdurl"]) assert.match(fs.readFileSync(path.join(vendor, `LICENSE-${name}`), "utf8"), /Copyright/);
+});
 
 function fixture(t) {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "review-policy-"));
@@ -154,4 +163,122 @@ test("listing examples cannot supply rules and literal listing mentions remain h
   }
   fs.writeFileSync(file, `Mention \`<listing>\` and \\<listing> literally.\n\n${template}`);
   assert.equal(invoke().status, 0);
+});
+
+test("raw HTML block families cannot supply policy and blank termination exposes real Markdown", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  const section = template.slice(template.indexOf("## Code Review Rules"));
+  const examples = [
+    `<div>\n${section}\n</div>`, `<details>\n${section}\n</details>`,
+    `<?example\n${section}\n?>`, `<!EXAMPLE\n${section}\n>`,
+    `<![CDATA[\n${section}\n]]>`, `<policy-example>\n${section}\n</policy-example>`,
+  ];
+  for (const example of examples) {
+    fs.writeFileSync(file, example);
+    const result = invoke();
+    assert.equal(result.status, 1, example.slice(0, 30));
+    assert.equal(JSON.parse(result.stdout).reviewPolicy.ok, false);
+  }
+  for (const tag of ["div", "details", "policy-example"]) {
+    fs.writeFileSync(file, `<${tag}>\n\n${template}\n</${tag}>`);
+    assert.equal(invoke().status, 0, tag);
+    fs.writeFileSync(file, `<${tag}>\n${template}\n</${tag}>`);
+    assert.equal(invoke().status, 0, `${tag}: full asset has a real later heading after the HTML block's blank-line termination`);
+  }
+});
+
+test("block structure precedes multiline code spans and literal span tags cannot hide real policy", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  for (const example of [
+    `Prose starts \`a code span\n${template}\nfinishes\` here.`,
+    `Mention \`the\nliteral <pre> tag\` in documentation.\n\n${template}`,
+    `Mention \`\`the\nliteral <template> and \` tag\`\` in documentation.\n\n${template}`,
+  ]) {
+    fs.writeFileSync(file, example);
+    const result = invoke();
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(JSON.parse(result.stdout).reviewPolicy.ruleIds.length, 6);
+  }
+});
+
+test("CommonMark block-tag inventory uses blank-line termination rather than HTML nesting", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  const section = template.slice(template.indexOf("## Code Review Rules"));
+  // CommonMark 0.31.2 section 4.6, block-start condition 6; independent fixture.
+  const tags = "address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param section search summary table tbody td tfoot th thead title tr track ul".split(" ");
+  for (const tag of tags.filter((tag) => !["iframe", "noframes"].includes(tag))) {
+    fs.writeFileSync(file, `<${tag} data-example="yes">\n${section}\n</${tag}>`);
+    assert.equal(invoke().status, 1, tag);
+    fs.writeFileSync(file, `<${tag}>\n\n${section}\n</${tag}>`);
+    assert.equal(invoke().status, 0, `${tag}: blank line restores Markdown`);
+  }
+});
+
+test("literal HTML context consumes only AST HTML nodes and protects all required positions", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  const section = template.slice(template.indexOf("## Code Review Rules"));
+  for (const source of [
+    ...["pre", "code", "listing", "template"].map((tag) => `<${tag}/>\n\n${section}\n</${tag}>`),
+    `<template>\n\n<!-- </template> -->\n${section}\n</template>`,
+    `<template>\n\n<![CDATA[</template>]]>\n${section}\n</template>`,
+    `<template>\n\n<?example </template> ?>\n${section}\n</template>`,
+    `<template>\n\n<!EXAMPLE </template>>\n${section}\n</template>`,
+    `<template>\n\n<custom title="</template>">\n${section}\n</template>`,
+    `<template><code></template></code></template>\n\n${section}`,
+    section.replace("<!-- test-integrity:v1 -->", "<template>\n\n<!-- test-integrity:v1 -->\n</template>"),
+    section.replace(/^- TI-04:.*$/m, (rule) => `<template>\n\n${rule}\n\n</template>`),
+    section.replace(/^- TI-04:.*$/m, (rule) => `${rule}\n  <code></code>`),
+    `<plaintext>\n\n</plaintext>\n\n${section}`,
+    `> ${section.split("\n").join("\n> ")}`,
+    `- Example:\n${section.split("\n").map((line) => `    ${line}`).join("\n")}`,
+  ]) {
+    fs.writeFileSync(file, source);
+    assert.equal(invoke().status, 1, source.slice(0, 70));
+  }
+  for (const source of [
+    `Ordinary <custom title="<pre>"> text.\n\n${section}`,
+    `<custom title="<template>">\n\n${section}`,
+    `<!-- <pre> -->\n\n${section}`,
+    `<![CDATA[<template>]]>\n\n${section}`,
+    `<?example <code> ?>\n\n${section}`,
+    `<!EXAMPLE <listing>>\n\n${section}`,
+    `\`\`\`html\n<pre>\n\`\`\`\n\n${section}`,
+    `    <template>\n\n${section}`,
+    ...["script", "style", "textarea", "xmp", "iframe", "noembed", "noframes"].map((tag) => `<${tag}> <!-- \" </${tag}${["script", "style", "textarea"].includes(tag) ? ">" : "\t>"}\n\n${section}`),
+    `${section}\n\n<template>unterminated unrelated tail`,
+  ]) {
+    fs.writeFileSync(file, source);
+    const result = invoke();
+    assert.equal(result.status, 0, `${source.slice(0, 70)}: ${result.stderr || result.stdout}`);
+  }
+});
+
+test("policy headings require real closing syntax and declarations cannot fake literal closers", (t) => {
+  const { repo, invoke } = fixture(t);
+  const file = path.join(repo, "AGENTS.md");
+  const section = template.slice(template.indexOf("## Code Review Rules"));
+  for (const title of ["## Code Review Rules###", "## Code Review Rules#", "## Code Review Rules ### extra"]) {
+    fs.writeFileSync(file, section.replace("## Code Review Rules", title));
+    assert.equal(invoke().status, 1, title);
+  }
+  for (const title of ["## Code Review Rules", "## Code Review Rules ###", "## Code Review Rules\t## \t"]) {
+    fs.writeFileSync(file, section.replace("## Code Review Rules", title));
+    assert.equal(invoke().status, 0, title);
+  }
+  for (const name of ["DOCTYPE", "doctype", "DocType"]) for (const quote of ['"', "'"]) {
+    for (const metadata of ["</template>", "prefix> </template>"]) {
+      fs.writeFileSync(file, `<template>\n\n<!${name} html PUBLIC ${quote}${metadata}${quote}>\n\n${section}\n</template>`);
+      assert.equal(invoke().status, 1, `${name} ${quote}${metadata}${quote}`);
+    }
+    fs.writeFileSync(file, `<!${name} html PUBLIC ${quote}prefix> <template>${quote}>\n\n${section}`);
+    assert.equal(invoke().status, 0, `${name}: declaration cannot fake an opener`);
+  }
+  for (const comment of ["<!-->", "<!--->", "<!-- <pre> -->"]) {
+    fs.writeFileSync(file, `Mention ${comment} as an inline comment.\n\n${section}`);
+    assert.equal(invoke().status, 0, comment);
+  }
 });

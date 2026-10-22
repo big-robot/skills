@@ -9,7 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { receiptHash } from "../scripts/worker-receipt.mjs";
 import { createReviewAuditReceipt, MAX_REVIEW_AUDIT_BYTES, serializeReviewAudit, sha256 } from "../scripts/review-audit-receipt.mjs";
-import { validateReceiptReferences } from "../scripts/verification-integrity.mjs";
+import { CONVENTIONAL_VERIFICATION_FILES, isVerificationPath, validateReceiptReferences } from "../scripts/verification-integrity.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SCRIPTS = path.join(ROOT, "scripts");
@@ -74,7 +74,7 @@ function writeAudit(repo, head, promptSha256, { message = "No findings.", codexB
   write(repo, "sdlc-scratch/audits/review.jsonl", serializeReviewAudit(transcript, receipt));
 }
 
-function fixture(t, { phase = "implementation", changes = true, extra = null } = {}) {
+function fixture(t, { phase = "implementation", changes = true, initial = null, extra = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "test-integrity-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const repo = path.join(root, "repo");
@@ -88,6 +88,7 @@ function fixture(t, { phase = "implementation", changes = true, extra = null } =
   write(repo, "domain.mjs", "export const hours = 12;\n");
   write(repo, "tests/domain.test.mjs", "import assert from 'node:assert/strict'; import {hours} from '../domain.mjs'; assert.equal(hours, 12);\n");
   write(repo, "fixtures/old.json", "{\"hours\":12}\n");
+  if (initial) initial(repo);
   git(repo, "add", ".");
   git(repo, "commit", "-m", "baseline");
   const base = git(repo, "rev-parse", "HEAD");
@@ -355,6 +356,57 @@ test("local GitHub action definitions and supporting code require complete CI di
   assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
 });
 
+const ecosystemVerificationFiles = {
+  javascript: ["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"],
+  python: ["noxfile.py", "pyproject.toml", "poetry.lock", "pdm.lock", "uv.lock", "Pipfile", "Pipfile.lock", "setup.cfg", "setup.py", "requirements.txt", "requirements.in", "tox.ini", "pytest.ini", "conftest.py"],
+  rust: ["Cargo.lock", "Cargo.toml"],
+  go: ["go.sum", "go.mod", "go.work", "go.work.sum"],
+  ruby: ["Gemfile.lock", "Gemfile", "Rakefile"],
+  maven: ["pom.xml"],
+  gradle: ["gradle.lockfile", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
+  automation: ["Makefile", "justfile", "Taskfile.yml", "Taskfile.yaml", ".gitlab-ci.yml", ".gitlab-ci.yaml", "Jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml"],
+};
+
+test("supported ecosystem manifests, runner files and lockfiles require root and nested dispositions", async (t) => {
+  assert.deepEqual(Object.keys(CONVENTIONAL_VERIFICATION_FILES).sort(), Object.keys(ecosystemVerificationFiles).sort());
+  for (const [ecosystem, names] of Object.entries(ecosystemVerificationFiles)) assert.deepEqual([...CONVENTIONAL_VERIFICATION_FILES[ecosystem]].sort(), [...names].sort(), ecosystem);
+  for (const [ecosystem, names] of Object.entries(ecosystemVerificationFiles)) await t.test(ecosystem, (t) => {
+    const files = names.flatMap((name) => [name, `module/${name}`]);
+    const f = fixture(t, { changes: false, extra(repo) { for (const file of files) write(repo, file, "# resolved verification dependency or runner fixture\n"); } });
+    const draft = { ...f.draft, verificationChanges: files.map((file) => f.disposition(file, "A")) };
+    for (const file of files) {
+      const omitted = { ...draft, verificationChanges: draft.verificationChanges.filter((entry) => entry.path !== file) };
+      assert.match(f.finalize(omitted).stderr, /omits changed file/, file);
+      assert.equal(f.verify(omitted).status, 30, file);
+    }
+    assert.equal(f.finalize(draft).status, 0);
+    assert.equal(f.verify().status, 0);
+    assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
+    assert.equal(f.verify({ ...draft, reviewTier: "trivial" }).status, 30);
+  });
+});
+
+test("dependency input families reconcile exact modified, removed and renamed paths", (t) => {
+  const inputs = ["noxfile.py", "module/Cargo.lock", "requirements-dev.txt", "requirements.prod.in", "requirements/base.txt", "requirements/ci/constraints.in", "gradle/dependency-locks/runtimeClasspath.lockfile", "module/gradle/dependency-locks/compileClasspath.lockfile"];
+  const f = fixture(t, { changes: false, initial(repo) { for (const file of inputs) write(repo, file, "old verification input\n"); }, extra(repo) {
+    for (const file of inputs) write(repo, file, "approved verification input\n");
+    fs.rmSync(path.join(repo, "module/Cargo.lock"));
+    fs.renameSync(path.join(repo, "requirements-dev.txt"), path.join(repo, "requirements-ci.txt"));
+  } });
+  const entries = [...inputs.map((file) => f.disposition(file, ["module/Cargo.lock", "requirements-dev.txt"].includes(file) ? "D" : "M")), f.disposition("requirements-ci.txt", "A")];
+  const draft = { ...f.draft, verificationChanges: entries };
+  for (const file of entries.map((entry) => entry.path)) {
+    const omitted = { ...draft, verificationChanges: entries.filter((entry) => entry.path !== file) };
+    assert.match(f.finalize(omitted).stderr, /omits changed file/, file);
+    assert.equal(f.verify(omitted).status, 30, file);
+  }
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
+  assert.equal(f.verify({ ...draft, reviewTier: "trivial" }).status, 30);
+  for (const file of ["src/session.py", "docs/requirements.md", "domain.lock", "requirements/data.json", "gradle/notes.lockfile", "module/noxfile.py.example"]) assert.equal(isVerificationPath(file), false, file);
+});
+
 test("small nontrivial implementation review evidence must bind the guarded authoritative audit", (t) => {
   const f = fixture(t);
   f.packet.runtime.codexBin = fs.realpathSync(process.execPath);
@@ -487,6 +539,7 @@ test("target ref advancement retains full-PR merge-base census and policy remova
   assert.equal(f.finalize().status, 0);
   assert.equal(f.verify().status, 0);
   const rules = fs.readFileSync(RULES, "utf8");
+  const section = rules.slice(rules.indexOf("## Code Review Rules"));
   for (const [label, invalid] of [
     ["removed", "## Code Review Rules\n\n<!-- test-integrity:v1 -->\n"],
     ["commented", rules.split("\n").map((line) => line.startsWith("- TI-") ? `<!-- ${line} -->` : line).join("\n")],
@@ -499,6 +552,16 @@ test("target ref advancement retains full-PR merge-base census and policy remova
     ["listing", `<listing>\n${rules}\n</listing>`],
     ["backtick-fence-suffix", `\`\`\`md\n\`\`\`still-code\n${rules}\n\`\`\``],
     ["tilde-fence-suffix", `~~~md\n~~~still-code\n${rules}\n~~~`],
+    ["div-block", `<div>\n${section}\n</div>`],
+    ["details-block", `<details>\n${section}\n</details>`],
+    ["processing-block", `<?example\n${section}\n?>`],
+    ["declaration-block", `<!EXAMPLE\n${section}\n>`],
+    ["cdata-block", `<![CDATA[\n${section}\n]]>`],
+    ["custom-block", `<policy-example>\n${section}\n</policy-example>`],
+    ["literal-blank", `<template>\n\n${section}\n</template>`],
+    ["literal-fake-close", `<template>\n\n<custom title="</template>">\n${section}\n</template>`],
+    ["adjacent-heading-hashes", section.replace("## Code Review Rules", "## Code Review Rules###")],
+    ...["DOCTYPE", "doctype", "DocType"].flatMap((name) => ['"', "'"].map((quote) => [`declaration-${name}-${quote}`, `<template>\n\n<!${name} html PUBLIC ${quote}prefix> </template>${quote}>\n\n${section}\n</template>`])),
   ]) {
     write(f.repo, "AGENTS.md", invalid);
     git(f.repo, "add", "AGENTS.md");
@@ -522,5 +585,22 @@ test("target ref advancement retains full-PR merge-base census and policy remova
     assert.equal(finalized.status, 0, finalized.stderr);
     const verified = f.verify(draft, head);
     assert.equal(verified.status, 0, verified.stderr);
+  }
+});
+
+test("finalizer and Controller preserve real Markdown policy after HTML blank lines and multiline code", (t) => {
+  const rules = fs.readFileSync(RULES, "utf8");
+  for (const source of [
+    `<div>\n\n${rules}\n</div>`,
+    `<details>\n${rules}\n</details>`,
+    `Prose starts \`a span\n${rules}\nfinishes\` here.`,
+    `Mention \`the\nliteral <pre> and <template> tags\` in documentation.\n\n${rules}`,
+    `Ordinary <custom title="<pre>"> text.\n\n${rules}`,
+    `Mention <!--> and <!---> inline comments.\n\n${rules}`,
+    rules.replace("## Code Review Rules", "## Code Review Rules ###"),
+  ]) {
+    const f = fixture(t, { changes: false, extra(repo) { write(repo, "AGENTS.md", source); } });
+    assert.equal(f.finalize().status, 0);
+    assert.equal(f.verify().status, 0);
   }
 });

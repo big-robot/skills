@@ -2,104 +2,129 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import commonmark from "./vendor/commonmark/commonmark-0.31.2.cjs";
 
 const template = fileURLToPath(new URL("../../shared/templates/agents-code-review-rules.md", import.meta.url));
 const contract = "test-integrity:v1";
 
 const containers = new Set(["pre", "code", "listing", "template"]);
+const rawTextTags = new Set(["script", "style", "textarea", "xmp", "iframe", "noembed", "noframes", "plaintext"]);
 
-function htmlTagAt(source, offset) {
-  const start = /^<(\/?)(pre|code|listing|template|script|style|textarea|xmp|iframe|noembed|noframes|plaintext)(?=[\s/>]|$)/i.exec(source.slice(offset));
-  if (!start) return null;
-  let quote = null;
-  for (let cursor = offset + start[0].length; cursor < source.length; cursor += 1) {
-    const character = source[cursor];
-    if (quote !== null) {
-      if (character === quote) quote = null;
-    } else if (character === '"' || character === "'") quote = character;
-    else if (character === ">") return { name: start[2].toLowerCase(), closing: start[1] === "/", end: cursor + 1 };
-  }
-  // An unfinished literal container cannot expose governing instructions.
-  return { name: start[2].toLowerCase(), closing: start[1] === "/", end: source.length };
-}
-
-function codeSpanEnd(source, offset, lineEnd) {
-  let length = 1;
-  while (source[offset + length] === "`") length += 1;
-  let cursor = offset + length;
-  while (cursor < lineEnd) {
-    const next = source.indexOf("`", cursor);
-    if (next < 0 || next >= lineEnd) return null;
-    let run = 1;
-    while (source[next + run] === "`") run += 1;
-    if (run === length) return next + run;
-    cursor = next + run;
-  }
-  return null;
-}
-
-// Ignore literal/raw HTML examples as well as Markdown code examples.
-function reviewSection(markdown) {
-  const source = markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => comment === `<!-- ${contract} -->` ? comment : "");
-  const sections = [];
-  let fence = null;
+// This is a literal-HTML safety supplement, not a second Markdown parser or DOM.
+// Feed only HTML nodes selected by CommonMark; text and code never enter it.
+function literalHTMLContext() {
   const stack = [];
-  let rawText = null;
-  let skipUntil = 0;
-  let offset = 0;
-  let active = null;
-  for (const line of source.split("\n")) {
-    const lineStart = offset;
-    const lineEnd = lineStart + line.length;
-    offset = lineEnd + 1;
-    let hidden = stack.length > 0 || rawText !== null || lineStart < skipUntil;
-    if (!hidden) {
-      const boundary = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-      if (boundary) {
-        if (fence === null) fence = { character: boundary[1][0], length: boundary[1].length };
-        else if (boundary[1][0] === fence.character && boundary[1].length >= fence.length
-          && /^[ \t]*$/.test(line.slice(boundary[0].length).replace(/\r$/, ""))) fence = null;
-        continue;
-      }
-      if (fence !== null || /^(?: {4}| {0,3}\t)/.test(line)) continue;
+  let opaque = null;
+  let pending = "";
+  let malformed = false;
+  let transitions = 0;
+  const markupEnd = (source, offset) => {
+    let quote = null;
+    for (let cursor = offset; cursor < source.length; cursor += 1) {
+      const character = source[cursor];
+      if (quote !== null) {
+        if (character === quote) quote = null;
+      } else if (character === '"' || character === "'") quote = character;
+      else if (character === ">") return cursor + 1;
     }
-    let cursor = Math.max(lineStart, skipUntil);
-    while (cursor < lineEnd) {
-      if (rawText !== null) {
-        hidden = true;
-        if (rawText === "plaintext") break;
-        const tag = source[cursor] === "<" && source[cursor + 1] === "/" ? htmlTagAt(source, cursor) : null;
-        if (tag?.closing && tag.name === rawText) {
-          rawText = null;
-          skipUntil = tag.end;
+    return null;
+  };
+  const tagAt = (source, offset) => {
+    const match = /^<(\/?)([A-Za-z][A-Za-z0-9-]*)(?=[\t\n\f\r />]|$)/.exec(source.slice(offset));
+    if (match === null) return null;
+    const end = markupEnd(source, offset + match[0].length);
+    return end === null ? { unfinished: true } : { name: match[2].toLowerCase(), closing: match[1] === "/", end };
+  };
+  return {
+    get visible() { return !malformed && stack.length === 0 && opaque === null && pending === ""; },
+    get transitions() { return transitions; },
+    consume(literal) {
+      const source = pending + literal;
+      pending = "";
+      let cursor = 0;
+      while (cursor < source.length) {
+        if (opaque === "plaintext") return;
+        if (opaque !== null) {
+          const close = new RegExp("</" + opaque + "(?=[\\t\\n\\f\\r />]|$)", "ig");
+          close.lastIndex = cursor;
+          const match = close.exec(source);
+          if (match === null) return;
+          const tag = tagAt(source, match.index);
+          if (tag.unfinished) { pending = source.slice(match.index); return; }
+          opaque = null;
+          transitions += 1;
           cursor = tag.end;
-        } else cursor += 1;
-        continue;
-      }
-      if (stack.length === 0) {
-        if (source[cursor] === "\\") { cursor += 2; continue; }
-        if (source[cursor] === "`") {
-          const end = codeSpanEnd(source, cursor, lineEnd);
-          if (end !== null) { cursor = end; continue; }
-          while (source[cursor] === "`") cursor += 1;
           continue;
         }
+        const next = source.indexOf("<", cursor);
+        if (next === -1) return;
+        cursor = next;
+        const rest = source.slice(cursor);
+        if (rest.startsWith("<!-->")) { cursor += 5; continue; }
+        if (rest.startsWith("<!--->")) { cursor += 6; continue; }
+        if (/^<![A-Z]/i.test(rest) && !rest.startsWith("<![CDATA[")) {
+          const end = markupEnd(source, cursor + 2);
+          if (end === null) { pending = rest; return; }
+          cursor = end;
+          continue;
+        }
+        const special = rest.startsWith("<!--") ? [4, "-->"] : rest.startsWith("<![CDATA[") ? [9, "]]>"]
+          : rest.startsWith("<?") ? [2, "?>"] : null;
+        if (special !== null) {
+          const end = source.indexOf(special[1], cursor + special[0]);
+          if (end === -1) { pending = rest; return; }
+          cursor = end + special[1].length;
+          continue;
+        }
+        const tag = tagAt(source, cursor);
+        if (tag === null) { cursor += 1; continue; }
+        if (tag.unfinished) { pending = rest; transitions += 1; return; }
+        cursor = tag.end;
+        if (tag.closing) {
+          if (stack.at(-1) === tag.name) { stack.pop(); transitions += 1; }
+          else if (containers.has(tag.name) && stack.length > 0) malformed = true;
+        } else if (containers.has(tag.name)) {
+          stack.push(tag.name);
+          transitions += 1;
+        } else if (rawTextTags.has(tag.name)) {
+          opaque = tag.name;
+          transitions += 1;
+        }
       }
-      const tag = source[cursor] === "<" ? htmlTagAt(source, cursor) : null;
-      if (tag === null) { cursor += 1; continue; }
-      hidden = true;
-      skipUntil = tag.end;
-      cursor = tag.end;
-      if (tag.closing) {
-        if (stack.at(-1) === tag.name) stack.pop();
-      } else if (containers.has(tag.name)) stack.push(tag.name);
-      else rawText = tag.name;
+    },
+  };
+}
+
+// The parser decides all Markdown block/inline precedence. Only root document
+// headings and actual list-item paragraphs can supply the versioned core.
+function reviewSection(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const document = new commonmark.Parser().parse(markdown);
+  const context = literalHTMLContext();
+  const sections = [];
+  const paragraphs = new Map();
+  let active = null;
+  const walker = document.walker();
+  let event;
+  while ((event = walker.next()) !== null) {
+    const { node, entering } = event;
+    if (entering && node.type === "heading" && node.parent === document && node.level <= 2 && context.visible) {
+      const line = lines[node.sourcepos[0][0] - 1];
+      active = node.level === 2 && /^ {0,3}## Code Review Rules(?:[ \t]+#+)?[ \t]*$/.test(line) ? [] : null;
+      if (active !== null) sections.push(active);
+    } else if (entering && (node.type === "html_block" || node.type === "html_inline")) {
+      const visible = context.visible;
+      context.consume(node.literal);
+      if (visible && context.visible && active !== null && node.parent === document
+        && node.type === "html_block" && node.literal.trim() === "<!-- " + contract + " -->") active.push(node.literal.trim());
+    } else if (node.type === "paragraph" && node.parent?.type === "item" && node.parent.firstChild === node && node.parent.parent?.parent === document) {
+      if (entering && context.visible && active !== null) paragraphs.set(node, { section: active, transitions: context.transitions });
+      else if (!entering) {
+        const start = paragraphs.get(node);
+        if (start && context.visible && start.transitions === context.transitions) start.section.push(lines[node.parent.sourcepos[0][0] - 1]);
+        paragraphs.delete(node);
+      }
     }
-    if (hidden) continue;
-    if (/^ {0,3}#{1,2}\s/.test(line)) {
-      active = /^ {0,3}## Code Review Rules\s*#*\s*$/.test(line) ? [] : null;
-      if (active) sections.push(active);
-    } else if (active !== null) active.push(line);
   }
   if (sections.length !== 1) throw new Error("require exactly one governing ## Code Review Rules section");
   return sections[0];
