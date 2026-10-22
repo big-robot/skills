@@ -84,6 +84,8 @@ Git supplies the complete base-to-candidate changed-file list. Renames are treat
 
 The [receipt reference](../codex-development-loop/references/verification-receipt.md) enumerates the maintained manifest/runner/dependency-input families for JavaScript, Python, Rust, Go, Ruby, Maven and Gradle. Their conventional root and nested lockfiles, Nox sessions, Python requirements inputs and Gradle dependency-lock files share the same disposition and review requirements. This registry does not imply universal custom-layout discovery.
 
+The same bounded registry covers conventional fixture/mock/snapshot components (including Go `testdata`, Jest/Vitest `__mocks__` and Playwright `*-snapshots`) and named CI provider files/subtrees. Custom configured locations still require full-diff semantic inspection. A census exceeding 256 entries or receipt exceeding 65,536 UTF-8 bytes reports `VERIFICATION CAPACITY` with its size and limit, preserving the draft and ledger. The Worker retains complete sanitized inventory/evidence and requests a Controller replan within existing authority; it cannot truncate, split scope autonomously, misuse `TEST CONFLICT`, or return `stopped` for capacity. `large-complex` does not relax transport limits. An indivisible unit needs reviewed transport redesign before implementation.
+
 The Controller also inspects the complete changed-file list for verification hidden behind custom naming or scripts. It requires missing dispositions before acceptance. Detection is based on paths, not a universal parser for every test framework. It cannot prove that an assertion was weakened, an expected value is independent, or a cited contract is authoritative.
 
 ## Boundaries and adoption

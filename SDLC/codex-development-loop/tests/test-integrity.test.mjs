@@ -9,7 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { receiptHash } from "../scripts/worker-receipt.mjs";
 import { createReviewAuditReceipt, MAX_REVIEW_AUDIT_BYTES, serializeReviewAudit, sha256 } from "../scripts/review-audit-receipt.mjs";
-import { CONVENTIONAL_VERIFICATION_FILES, isVerificationPath, validateReceiptReferences } from "../scripts/verification-integrity.mjs";
+import { CONVENTIONAL_VERIFICATION_FILES, CONVENTIONAL_VERIFICATION_DIRECTORIES, CONVENTIONAL_CI_PATHS, isVerificationPath, validateReceiptReferences, validateVerificationShape } from "../scripts/verification-integrity.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SCRIPTS = path.join(ROOT, "scripts");
@@ -364,7 +364,7 @@ const ecosystemVerificationFiles = {
   ruby: ["Gemfile.lock", "Gemfile", "Rakefile"],
   maven: ["pom.xml"],
   gradle: ["gradle.lockfile", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
-  automation: ["Makefile", "justfile", "Taskfile.yml", "Taskfile.yaml", ".gitlab-ci.yml", ".gitlab-ci.yaml", "Jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml"],
+  automation: ["Makefile", "justfile", "Taskfile.yml", "Taskfile.yaml"],
 };
 
 test("supported ecosystem manifests, runner files and lockfiles require root and nested dispositions", async (t) => {
@@ -405,6 +405,118 @@ test("dependency input families reconcile exact modified, removed and renamed pa
   assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
   assert.equal(f.verify({ ...draft, reviewTier: "trivial" }).status, 30);
   for (const file of ["src/session.py", "docs/requirements.md", "domain.lock", "requirements/data.json", "gradle/notes.lockfile", "module/noxfile.py.example"]) assert.equal(isVerificationPath(file), false, file);
+});
+
+const verificationDirectories = ["testdata", "__mocks__", "test", "tests", "spec", "specs", "__tests__", "fixture", "fixtures", "__fixtures__", "snapshot", "snapshots", "__snapshots__"];
+const ciFiles = [".travis.yml", ".travis.yaml", ".gitlab-ci.yml", ".gitlab-ci.yaml", "Jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml", "bitbucket-pipelines.yml", ".drone.yml", ".cirrus.yml", "appveyor.yml", ".appveyor.yml", ".woodpecker.yml", ".woodpecker.yaml"];
+const ciDirectories = [".github/workflows", ".github/actions", ".circleci", ".buildkite", ".husky", ".woodpecker", ".semaphore", ".teamcity"];
+
+function assertPathDispositions(t, files) {
+  const f = fixture(t, { changes: false, extra(repo) { for (const file of files) write(repo, file, "verification input\n"); } });
+  const draft = { ...f.draft, verificationChanges: files.map((file) => f.disposition(file, "A")) };
+  for (const file of files) {
+    const omitted = { ...draft, verificationChanges: draft.verificationChanges.filter((entry) => entry.path !== file) };
+    assert.match(f.finalize(omitted).stderr, /omits changed file/, file);
+    assert.equal(f.verify(omitted).status, 30, file);
+  }
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+  assert.match(f.finalize({ ...draft, reviewTier: "trivial" }).stderr, /at least standard/);
+  assert.equal(f.verify({ ...draft, reviewTier: "trivial" }).status, 30);
+}
+
+test("conventional fixture, mock and Playwright snapshot directories require complete dispositions", (t) => {
+  assert.deepEqual([...CONVENTIONAL_VERIFICATION_DIRECTORIES].sort(), [...verificationDirectories].sort());
+  const files = verificationDirectories.flatMap((directory) => [`${directory}/input.dat`, `pkg/${directory}/nested/input.bin`]);
+  files.push("page.spec.ts-snapshots/landing.png", "pkg/page.test.js-snapshots/chromium/aria.yml", "testdata/fuzz/FuzzParse/012345", "src/__mocks__/@scope/client/index.js");
+  assertPathDispositions(t, files);
+  for (const file of ["src/client.js", "custom-data/input.bin", "nottestdata/input.dat", "__mocks__extra/client.js", "page-snapshots-extra/input.png"]) assert.equal(isVerificationPath(file), false, file);
+  for (const file of ["test-utils/helper.mjs", "nested/fixtures-v2/input.bin", "module/domain.test.ts", "spec.helpers/run.js"]) assert.equal(isVerificationPath(file), true, file);
+});
+
+test("conventional CI provider files and complete configuration directories require dispositions", (t) => {
+  assert.deepEqual([...CONVENTIONAL_CI_PATHS.files].sort(), [...ciFiles].sort());
+  assert.deepEqual([...CONVENTIONAL_CI_PATHS.directories].sort(), [...ciDirectories].sort());
+  const files = ciFiles.flatMap((file) => [file, `module/${file}`]);
+  files.push(...ciDirectories.flatMap((directory) => [`${directory}/pipeline.yml`, `module/${directory}/scripts/run.sh`]));
+  assertPathDispositions(t, files);
+  for (const file of ["src/travis.js", "notes/.travis.yml.example", "module/.teamcity-extra/config.kts", ".github/notes/readme.md", "custom-ci/pipeline.yml"]) assert.equal(isVerificationPath(file), false, file);
+});
+
+test("fixture census preserves modified, deleted, renamed and type-changed diff statuses", (t) => {
+  const files = ["testdata/input.json", "testdata/deleted.bin", "__mocks__/client.js", "pkg/testdata/link.dat"];
+  const f = fixture(t, { changes: false, initial(repo) { for (const file of files) write(repo, file, "old fixture\n"); }, extra(repo) {
+    write(repo, "testdata/input.json", "approved fixture\n");
+    fs.rmSync(path.join(repo, "testdata/deleted.bin"));
+    fs.renameSync(path.join(repo, "__mocks__/client.js"), path.join(repo, "__mocks__/renamed.js"));
+    fs.rmSync(path.join(repo, "pkg/testdata/link.dat"));
+    fs.symlinkSync("../../contract.md", path.join(repo, "pkg/testdata/link.dat"));
+  } });
+  const entries = [f.disposition(files[0], "M"), f.disposition(files[1], "D"), f.disposition(files[2], "D"), f.disposition("__mocks__/renamed.js", "A"), f.disposition(files[3], "T")];
+  const draft = { ...f.draft, verificationChanges: entries };
+  for (const file of entries.map((entry) => entry.path)) {
+    const omitted = { ...draft, verificationChanges: entries.filter((entry) => entry.path !== file) };
+    assert.match(f.finalize(omitted).stderr, /omits changed file/, file);
+    assert.equal(f.verify(omitted).status, 30, file);
+  }
+  assert.equal(f.finalize(draft).status, 0);
+  assert.equal(f.verify().status, 0);
+});
+
+test("verification capacity preserves the count bound and independently classifies a 129-file rename", (t) => {
+  const f = fixture(t, { changes: false, initial(repo) { for (let i = 0; i < 129; i += 1) write(repo, `tests/old-${i}.dat`, "retained fixture\n"); }, extra(repo) {
+    for (let i = 0; i < 129; i += 1) fs.renameSync(path.join(repo, `tests/old-${i}.dat`), path.join(repo, `tests/new-${i}.dat`));
+  } });
+  const completeShape = { ...f.draft, verificationChanges: Array.from({ length: 256 }, (_, i) => f.disposition(`tests/path-${i}.dat`, "A")) };
+  assert.doesNotThrow(() => validateVerificationShape(completeShape), "256 entries remain supported at the shape seam");
+  assert.throws(() => validateVerificationShape({ ...completeShape, verificationChanges: [...completeShape.verificationChanges, f.disposition("tests/path-256.dat", "A")] }), /VERIFICATION CAPACITY: 257 verification changes exceed 256/);
+  const ledgerBefore = fs.readFileSync(f.ledgerFile);
+  const finalized = f.finalize();
+  assert.match(finalized.stderr, /VERIFICATION CAPACITY: 258 verification changes exceed 256/);
+  assert.match(finalized.stderr, /ask the Controller to replan/);
+  assert.equal(fs.readFileSync(f.receiptFile, "utf8"), JSON.stringify(f.draft), "no draft overwrite on capacity failure");
+  const verified = f.verify(f.draft);
+  assert.equal(verified.status, 30);
+  assert.match(verified.stderr, /VERIFICATION CAPACITY: 258 verification changes exceed 256/);
+  assert.deepEqual(fs.readFileSync(f.ledgerFile), ledgerBefore);
+});
+
+test("receipt capacity checks UTF-8 transport and finalized serialization without overwriting evidence", (t) => {
+  const f = fixture(t, { changes: false });
+  const invokeFinalizer = () => run(process.execPath, [path.join(SCRIPTS, "finalize-worker-receipt.mjs"), "--repo", f.repo, "--packet", f.packetFile], ROOT);
+  const ledgerBefore = fs.readFileSync(f.ledgerFile);
+  const compact = JSON.stringify(f.draft);
+  fs.writeFileSync(f.receiptFile, compact + " ".repeat(65536 - Buffer.byteLength(compact)));
+  assert.equal(invokeFinalizer().status, 0, "exactly 65536 input bytes remain supported");
+  const finalized = fs.readFileSync(f.receiptFile, "utf8");
+  fs.writeFileSync(f.receiptFile, finalized + " ".repeat(65536 - Buffer.byteLength(finalized)));
+  assert.equal(f.verify().status, 0, "Controller accepts the exact transport bound");
+  const oversized = JSON.stringify({ ...f.draft, padding: "é".repeat(33000) });
+  fs.writeFileSync(f.receiptFile, oversized);
+  const draftOverflow = invokeFinalizer();
+  assert.match(draftOverflow.stderr, new RegExp(`VERIFICATION CAPACITY: ${Buffer.byteLength(oversized)} UTF-8 receipt bytes exceed 65536`));
+  assert.equal(fs.readFileSync(f.receiptFile, "utf8"), oversized);
+  const hashValid = { ...f.draft, padding: "é".repeat(33000) };
+  const rejected = f.verify(hashValid);
+  assert.equal(rejected.status, 30);
+  assert.match(rejected.stderr, /VERIFICATION CAPACITY: \d+ UTF-8 receipt bytes exceed 65536/);
+  const controllerBefore = JSON.stringify({ ...hashValid, receiptSha256: receiptHash(hashValid) });
+  assert.equal(fs.readFileSync(f.receiptFile, "utf8"), controllerBefore);
+  const prettyOverflow = { ...f.draft, riskEvidence: [] };
+  while (Buffer.byteLength(JSON.stringify({ ...prettyOverflow, receiptSha256: receiptHash(prettyOverflow) }, null, 2) + "\n") <= 65536) prettyOverflow.riskEvidence.push(evidence());
+  assert.ok(Buffer.byteLength(JSON.stringify(prettyOverflow)) < 65536, "compact draft fits while pretty serialization does not");
+  const prettyRejected = f.finalize(prettyOverflow);
+  assert.match(prettyRejected.stderr, /VERIFICATION CAPACITY: \d+ UTF-8 receipt bytes exceed 65536/);
+  assert.equal(fs.readFileSync(f.receiptFile, "utf8"), JSON.stringify(prettyOverflow));
+  fs.writeFileSync(f.receiptFile, "x".repeat(65537));
+  assert.match(invokeFinalizer().stderr, /VERIFICATION CAPACITY/, "stat limit precedes JSON parsing");
+  assert.match(f.verify().stderr, /VERIFICATION CAPACITY/, "Controller stat limit precedes JSON parsing");
+  fs.rmSync(f.receiptFile);
+  fs.symlinkSync(f.packetFile, f.receiptFile);
+  assert.match(invokeFinalizer().stderr, /regular non-symlink/);
+  assert.doesNotMatch(invokeFinalizer().stderr, /VERIFICATION CAPACITY/);
+  assert.match(f.verify().stderr, /regular non-symlink/);
+  assert.deepEqual(fs.readFileSync(f.ledgerFile), ledgerBefore);
 });
 
 test("small nontrivial implementation review evidence must bind the guarded authoritative audit", (t) => {

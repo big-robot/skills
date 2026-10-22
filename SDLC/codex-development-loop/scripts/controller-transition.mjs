@@ -10,7 +10,7 @@ import { isValidManualReviewBasis, validateLedger } from "./validate-ledger.mjs"
 import { SHA_RE, validateWorkerReceiptShape } from "./worker-receipt.mjs";
 import { isReviewRequestBody, reviewRequestBody } from "./review-request.mjs";
 import { automaticReviewEvidence, readReviewSnapshot } from "./watch-pr.mjs";
-import { verificationBase, reconcileVerificationChanges, validateReceiptReferences } from "./verification-integrity.mjs";
+import { verificationBase, reconcileVerificationChanges, validateReceiptReferences, assertReceiptByteCapacity } from "./verification-integrity.mjs";
 import { assertReviewPolicy } from "./review-policy.mjs";
 
 const OPERATIONS = new Set(["verify-worker-return", "adopt-review", "request-review", "reconcile-review-request", "classify-review", "merge-child", "prepare-parent-approval", "merge-parent"]);
@@ -91,7 +91,8 @@ function verifyWorkerReceipt(options, ledger) {
   if (ledger.continuationMode !== "controller-turn") fail("Worker return verification requires controller-turn ownership");
   if (!options.workerReceipt || !path.isAbsolute(options.workerReceipt)) fail("--worker-receipt must be absolute");
   const stat = fs.lstatSync(options.workerReceipt);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024) fail("worker receipt must be a regular file no larger than 64 KiB");
+  if (!stat.isFile() || stat.isSymbolicLink()) fail("worker receipt must be a regular non-symlink file");
+  try { assertReceiptByteCapacity(stat.size); } catch (error) { fail(error.message); }
   const receipt = JSON.parse(fs.readFileSync(options.workerReceipt, "utf8"));
   let suppliedHash;
   try {

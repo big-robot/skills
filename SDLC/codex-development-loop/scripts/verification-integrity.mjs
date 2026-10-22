@@ -6,6 +6,20 @@ import { MAX_REVIEW_AUDIT_BYTES, verifyReviewAudit } from "./review-audit-receip
 const SHA = /^[0-9a-f]{40}$/;
 const EVIDENCE_KEYS = ["acceptanceEvidence", "riskEvidence", "tests", "localReview", "checks"];
 const MAX_REFERENCE_BYTES = 1024 * 1024;
+export const MAX_VERIFICATION_CHANGES = 256;
+export const MAX_WORKER_RECEIPT_BYTES = 64 * 1024;
+
+function capacityError(actual, limit, unit) {
+  return new Error(`VERIFICATION CAPACITY: ${actual} ${unit} exceed ${limit}. Preserve the complete sanitized inventory and evidence; ask the Controller to replan within existing approved unit and publication authority. Do not omit or truncate evidence, split scope autonomously, use TEST CONFLICT, or return stopped. An indivisible unit requires a reviewed transport redesign before implementation.`);
+}
+
+export function assertVerificationCountCapacity(count) {
+  if (count > MAX_VERIFICATION_CHANGES) throw capacityError(count, MAX_VERIFICATION_CHANGES, "verification changes");
+}
+
+export function assertReceiptByteCapacity(bytes) {
+  if (bytes > MAX_WORKER_RECEIPT_BYTES) throw capacityError(bytes, MAX_WORKER_RECEIPT_BYTES, "UTF-8 receipt bytes");
+}
 
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -110,7 +124,8 @@ export function validateSurfaceClosure(receipt) {
 
 export function validateVerificationShape(receipt) {
   if (!SHA.test(receipt.verificationBaseSha || "")) throw new Error("worker receipt verificationBaseSha must be a full lowercase SHA");
-  if (!Array.isArray(receipt.verificationChanges) || receipt.verificationChanges.length > 256) throw new Error("worker receipt verificationChanges must be a bounded array");
+  if (!Array.isArray(receipt.verificationChanges)) throw new Error("worker receipt verificationChanges must be a bounded array");
+  assertVerificationCountCapacity(receipt.verificationChanges.length);
   const seen = new Set();
   receipt.verificationChanges.forEach((change, index) => {
     const label = `worker receipt verificationChanges[${index}]`;
@@ -235,14 +250,24 @@ export const CONVENTIONAL_VERIFICATION_FILES = Object.freeze(Object.fromEntries(
   ruby: ["Gemfile", "Gemfile.lock", "Rakefile"],
   maven: ["pom.xml"],
   gradle: ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.lockfile"],
-  automation: ["Makefile", "justfile", "Taskfile.yml", "Taskfile.yaml", ".gitlab-ci.yml", ".gitlab-ci.yaml", "Jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml"],
+  automation: ["Makefile", "justfile", "Taskfile.yml", "Taskfile.yaml"],
 }).map(([ecosystem, files]) => [ecosystem, Object.freeze(files)])));
 const conventionalVerificationNames = new Set(Object.values(CONVENTIONAL_VERIFICATION_FILES).flat().map((file) => file.toLowerCase()));
+export const CONVENTIONAL_VERIFICATION_DIRECTORIES = Object.freeze(["test", "tests", "spec", "specs", "__tests__", "fixture", "fixtures", "__fixtures__", "snapshot", "snapshots", "__snapshots__", "testdata", "__mocks__"]);
+export const CONVENTIONAL_CI_PATHS = Object.freeze({
+  files: Object.freeze([".gitlab-ci.yml", ".gitlab-ci.yaml", "Jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml", ".travis.yml", ".travis.yaml", "bitbucket-pipelines.yml", ".drone.yml", ".cirrus.yml", "appveyor.yml", ".appveyor.yml", ".woodpecker.yml", ".woodpecker.yaml"]),
+  directories: Object.freeze([".github/workflows", ".github/actions", ".circleci", ".buildkite", ".husky", ".woodpecker", ".semaphore", ".teamcity"]),
+});
+const verificationDirectories = new Set(CONVENTIONAL_VERIFICATION_DIRECTORIES);
+const ciNames = new Set(CONVENTIONAL_CI_PATHS.files.map((file) => file.toLowerCase()));
 
 export function isVerificationPath(file) {
-  return /(^|\/)(?:tests?|specs?|__tests__|fixtures?|__fixtures__|snapshots?|__snapshots__)(\/|[._-])/i.test(file)
+  const lower = file.toLowerCase();
+  return lower.split("/").some((component) => verificationDirectories.has(component) || /^[^/]+-snapshots$/.test(component))
+    || /(^|\/)(?:tests?|specs?|__tests__|fixtures?|__fixtures__|snapshots?|__snapshots__)(\/|[._-])/i.test(file)
     || /(?:^|[./_-])(?:test|spec|fixture|snapshot)(?:[._-]|$)/i.test(path.basename(file))
-    || /(^|\/)(?:\.github\/(?:workflows|actions)|\.circleci|\.buildkite|\.husky)(\/|$)/i.test(file)
+    || ciNames.has(path.basename(lower))
+    || CONVENTIONAL_CI_PATHS.directories.some((directory) => `/${lower}/`.includes(`/${directory}/`))
     || conventionalVerificationNames.has(path.basename(file).toLowerCase())
     || /^requirements(?:[._-][^/]*)?\.(?:txt|in)$/i.test(path.basename(file))
     || /(^|\/)requirements\/.+\.(?:txt|in)$/i.test(file)
@@ -261,6 +286,7 @@ export function reconcileVerificationChanges(receipt, repo, baseSha) {
     if (!["A", "M", "D", "T"].includes(fields[i]) || !fields[i + 1]) throw new Error("unsupported verification diff status");
     changed.set(fields[i + 1], fields[i]);
   }
+  assertVerificationCountCapacity([...changed.keys()].filter(isVerificationPath).length);
   const declared = new Set();
   for (const entry of receipt.verificationChanges) {
     if (changed.get(entry.path) !== entry.status) throw new Error(`verification disposition is not an exact changed path/status: ${entry.path}`);
