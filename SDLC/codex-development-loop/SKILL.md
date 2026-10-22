@@ -35,6 +35,8 @@ Acceptance criteria, exclusions, security boundaries, and explicit product decis
 
 Before any ref, worktree, ledger, task, PR, comment, or label mutation, run the read-only launch preflight below and reconcile the selected mode's complete contract, graph, ownership, clean exact approved base, safe create/resume path, and practical verification seam. Inspect implementation source before dispatch only for a specific missing or contradictory preflight fact; leave fresh discovery to the Worker. A failed preflight remains read-only; return publication defects to their owning workflow.
 
+Before launch, read the target repository's root AGENTS.md and verify that its Code Review Rules include the six rules in the [shared template](../shared/templates/agents-code-review-rules.md). If the file, section or required guidance is missing, stop launch and report the path, missing guidance and template to copy; do not edit the target repository without authority. This is an instruction-level check, not a runtime parser or preflight-script guarantee.
+
 Return the exact launch packet and reuse matching prior explicit authorization, including combined publication-and-launch approval. Ask once only for uncovered launch authority. Planning or review alone does not authorize launch.
 
 A runtime mismatch blocks dependency installation, tests, and local review. Pin live preflight Node/Codex binaries and Codex version in Controller state and Worker packets, reapply them on every wake, and initialize diagnostic run usage before first dispatch.

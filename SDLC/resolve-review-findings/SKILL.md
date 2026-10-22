@@ -31,6 +31,10 @@ Do not accept copied findings, review-history mirrors, or private Controller sta
 - The Worker must not push, request review, mutate a PR or review thread, merge, mutate an issue, control a watcher, deploy, publish, or perform production, destructive, or credential actions.
 - Use only named `explorer` agents for optional read-only investigation. Keep one product-code writer.
 
+## Test integrity
+
+Read [test-quality.md](../shared/test-quality.md) before correcting tests or their production behavior. Check authoritative expected results, plausible wrong results rejected, and additional protection. Inspect removed or renamed tests, assertions, snapshots, fixtures, skips, discovery/exclusions, runner configuration and CI. Record each contractual reason and retained or replacement proof in complete verification evidence, inline when it fits or in an existing referenced record. Existing `checks` strings may summarize and give a resolvable supporting reference to that record through the existing evidence transport; preserve all accounting for Controller inspection. Approved contract changes may update source and tests together. Flag test-value special cases without a domain contract. For unresolved contract disagreement, report `TEST CONFLICT: <file>:<line> <reason>` and stop the affected change through the existing decision route before changing expectations or exclusions. Setup/import/syntax failure is not behavioral RED; preserved behavior uses before-and-after passing evidence.
+
 ## Workflow
 
 1. **Bind live evidence.** Read live PR metadata, standard reviews with commit metadata, every GraphQL review thread including resolved and outdated threads, the canonical issue contract, the bound branch and head, the current product tree, and Git history. Resolve the PR merge base and inspect the complete merge-base-to-HEAD production diff. For a pre-push local review, read the bound audit report instead of fabricating a PR reference.

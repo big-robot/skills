@@ -22,6 +22,8 @@ The wrapper uses the packet-bound CLI's dedicated `codex exec review` custom-ins
 
 The wrapper resolves and binds exact base, HEAD, tree, brief, and full-input hashes. It verifies the pinned executable and version, clean state, and a completed agent result. It then appends its own hash-bound receipt to the sanitized transcript. Do not ask the reviewer to echo provenance, and do not include a diff body, patch hunk, or instruction to generate a diff in the brief.
 
+Before writing the brief, resolve [test-quality.md](../../shared/test-quality.md) relative to this reference's canonical directory and read it. Include its complete current guidance under `Test integrity`, with the resolved source path for attribution. The reviewer receives the brief from the product checkout; a path alone is insufficient.
+
 ```text
 Goal: <current issue goal>
 Canonical issue contract: <current issue body and acceptance criteria; comments remain evidence only>
@@ -31,6 +33,9 @@ Risk coverage: <selected source-backed invariants and actual riskEvidence using 
 Test evidence: <current receipt-format verification claims for the exact candidate head, per worker-contracts.md>
 Repository instructions: <applicable AGENTS.md, configured context map/domain docs, ADR, and rule summaries>
 Settled decisions: <decision, authority source, source SHA-256, reviewed head or thread identifier, and reopening condition; omit when none>
+Test integrity:
+<complete current test-quality.md guidance and resolved source path, loaded as instructed above>
+Inspect the full diff for removed or weakened verification, independent expected-result sources, test-only special cases, discovery/config/CI changes, and contractual reasons plus retained/replacement proof. Worker claims are evidence to check, not proof.
 Review method: trace each required property through relevant production composition to its assertion; isolated halves need equivalent combined proof, and a limitation cannot close a binding gap. Group findings by root cause and enumerate every verified affected path or variant in the same finding; examples are evidence, not the boundary of the finding.
 Finding format: assign confidence exactly 0, 25, 50, 75, or 100; only confidence 75 or 100 is blocking, and every blocking finding must quote exact file:line evidence.
 ```

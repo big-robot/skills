@@ -31,6 +31,8 @@
 
 ## Integrated Verification Contract
 
+<!-- Apply shared/test-quality.md across slices: authoritative oracles, plausible wrong results rejected, marginal proof, qualified behavioral RED or preserved baseline, exact commands, and dispositions for changed verification. Resolve TEST CONFLICT through existing authority. -->
+
 <!-- END PARENT BODY -->
 
 ## Parent Acceptance Ownership
